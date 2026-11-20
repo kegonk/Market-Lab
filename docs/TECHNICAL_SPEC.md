@@ -1,6 +1,6 @@
 # Technical Specification — Kairos Market Lab
 
-Status: v0.1 standalone prototype scope. Scope owner: `kegonk/Market-Lab`. Research only.
+Status: v0.1 reference contract plus implemented v0.2–v0.5 extensions. Scope owner: `kegonk/Market-Lab`. Research only.
 
 ## Purpose and non-goals
 
@@ -200,3 +200,68 @@ In an unleveraged spot model at default endowments, BANKRUPT can naturally
 remain at zero; the configured threshold and deterministic synthetic crash
 are covered by tests. Neither a clean test run nor visually convincing chart
 supports predictions about real financial markets.
+
+
+## v0.5 — Deterministic synthetic population evolution (implemented)
+
+**Scope:** one process, one local HTTP session, no external broker, no real
+market access, no credentials, no Kairos AGI dependency. Optional and
+**disabled by default** to preserve v0.4 trajectories.
+
+### Model contracts
+
+1. Source population: the existing 1,000 `A####` wallets created by the v0.3
+   `SyntheticEconomy`. No new account, cash or VCOIN is minted when population
+   membership changes. `MAKER`, `STRESS` and `EXCHANGE` are outside the
+   population. Default 900 admitted, 100 pre-funded and waitlisted.
+2. Strategy is separate from account identity. Each agent can be assigned one
+   of `NOISE`, `MAKER`, `TREND` and `REVERSION`. Changing this rule does
+   not reset or transfer the agent's balances, commissions or FIFO lots.
+3. Every `evolution_review_ticks=20` ticks, compute the *relative holding
+   benchmark* for agents with a **new executed fill** since the prior review:
+
+   `relative_ticks = (cash_t + coins_t * price_t) - (cash_at_join + coins_at_join * price_t)`
+
+   The benchmark intentionally controls for the same price change of the
+   original inventory. It is not a controlled trial of different strategies;
+   post-trade quantities, fees, path dependence and endogenous market responses
+   are material limitations.
+4. A negative observation increments a consecutive-weak count and switches
+   strategy; a positive one resets the count. No extra penalty accrues in an
+   epoch without a new fill. Upon `weak_reviews_to_exit=3` weak observations,
+   retire the agent: cancel its existing passive orders, release collateral,
+   set `STOPPED` if otherwise `ACTIVE`, and keep all remaining assets in its
+   wallet. Existing `BANKRUPT` / `STOPPED` risk statuses take precedence.
+5. For each exit, admit one waiting account at the next review, capped at
+   `max_joins_per_review=10`. Skip reserve accounts that no longer have
+   trading permission. No negative or overdrawn virtual balances allowed.
+6. Evaluation ranks strategy classes by mean observed excess PnL of eligible
+   participants and selects the strongest available alternative, using a
+   fixed ordering to break ties. If no peer alternative has data, rotate
+   deterministically. This is a **rule-based heuristic**, not a trained model.
+7. Two runs with the same seed, configuration and number of ticks produce
+   identical serialized state and strategy transition history. Changing the
+   number of requests/steps cannot change the final result at a fixed tick.
+
+### Invariants and acceptance
+
+- No new wallet creation or asset minting; total VCOIN and total VCU cash
+  across market wallets including `EXCHANGE` stay equal to their initial totals.
+- Book reservation equality, limit-order conservation and fee-account identity
+  remain enforced on every tick, with fail-closed assertions.
+- Active, waiting, exited and no-longer-eligible waitlisted identities form a
+  disjoint partition of the original 1,000 IDs.
+- A retired trader cannot trade; an ineligible waiting trader cannot be revived;
+  depleted reserves do not trigger fabricated newcomers.
+- Every exposed result carries `source=SIMULATED`. The UI uses local
+  `textContent` to display evolution records, not untrusted HTML injection.
+- v0.4 compatibility uses `evolution_enabled=False` by default. Original
+  LQ-001 paired fixed-tape experiment remains intact and separate.
+- The v0.5 test suite contains 58 tests, including 14 new population tests.
+
+### Non-goals
+
+No natural selection of model parameters by an optimizer, no neural network,
+no reinvestment of commissions, no automatic recapitalization, no liquidation
+on exit, no lifecycle SQLite persistence, no claim of real market stylized-fact
+calibration and no connection to external exchange or Kairos AGI.

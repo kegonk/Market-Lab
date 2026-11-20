@@ -13,3 +13,9 @@
 .chip.fail{color:var(--red);border-color:var(--red)}
 @media(max-width:1220px){.economy-pane{grid-column:1 / -1}}
 @media(max-width:720px){.economy-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.leaders-grid{grid-template-columns:1fr}}
+
+/* v0.5: a compact, read-only view of the synthetic participant population. */
+.population-pane{grid-column:span 2}
+.population-pane .agents{margin:13px 0 18px}
+.population-pane .population-event{display:block;white-space:normal;line-height:1.45}
+@media(max-width:1220px){.population-pane{grid-column:1 / -1}}
