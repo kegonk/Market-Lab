@@ -59,3 +59,43 @@ No exchange, external market data, live keys, actual money, paid models, or Kair
 4. No import, network operation, credentials, or exchange routing exists in the application.
 5. UI and artifacts mark all outputs `SIMULATED`.
 6. A change to the existing production or PAPER trading runtime is not part of this project.
+
+## v0.2 — Browser-based synthetic market (implemented)
+
+A standalone localhost-only HTTP simulator at `python -m market_lab.web`.
+No external packages, prices, exchange endpoints, trading capital, or Kairos imports.
+The UI displays mutable book levels, OHLCV bars derived from actual *synthetic*
+executed fills, per-agent-type activity counters, execution tape, shock details,
+and controls for play, pause, step, speed, and parameter reset.
+
+### Determinism and agent behavior
+
+- Integer price ticks, integer quantities and price/time FIFO within equal levels.
+- One `random.Random(seed)` per independent session. No wall-clock input to matching.
+- 1000 possible agent identifiers, default six decisions per simulation tick.
+- NOISE (50%) alternates random market/passive orders; MAKER (20%) adds passive
+  orders; TREND (20%) chooses the directional side of a recent price change;
+  REVERSION (10%) chooses the opposite. These are simplified reactive rules,
+  not wealthy, rational, independently capital-limited market participants.
+- The forced synthetic SELL happens on the same configured tick in baseline
+  and treatment. The treatment removes up to 85% (configurable) of top-eight
+  BID-level quantity first, with the same rounding as LQ-001. Subsequent
+  endogenous behavior can diverge: this is **not** the fixed-tape paired test.
+- For candles without trades, an explicitly zero-volume flat OHLC is emitted;
+  these zero-activity bars do not imply that a trade took place.
+- Loopback server offers GET `/api/state` and JSON POST `/api/step`,
+  POST `/api/reset`. No order-related endpoint exists. Request parameters,
+  sizes, hostnames, origins and fetch-site context are bounded/validated.
+- No external CDN, analytics, API key, exchange SDK, or LLM; no cross-origin
+  sharing. Browser JS interacts only with the local Python server.
+
+### v0.2 acceptance
+
+1. `python -m unittest discover -s tests -v` passes both v0.1 and v0.2 tests.
+2. Browser UI loads via `python -m market_lab.web`, play/step/pause/reset
+   operate exclusively on synthetic local state.
+3. Same seed/config gives identical final serialized state and trade tape.
+4. Baseline and treatment have identical state before the forced sell.
+5. After shock a CANCEL is applied to resting BID volume, followed by one
+   aggressive SELL; unfilled quantity is explicit, never invented.
+6. All statuses remain SIMULATED. No real market data or linked Kairos paths.
