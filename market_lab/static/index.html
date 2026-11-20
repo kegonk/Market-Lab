@@ -5,7 +5,7 @@
 <div class="shell">
 <header class="header">
  <div class="brand"><div class="mark"><span></span><span></span><span></span></div><div><div class="eyebrow">AUTONOMOUS RESEARCH SYSTEM</div><h1>MARKET <em>LAB</em></h1></div></div>
- <div class="head-right"><span class="chip synthetic">● SIMULATED</span><span class="chip outline">VCOIN / VCU</span><span class="chip version">v0.2</span></div>
+ <div class="head-right"><span class="chip synthetic">● SIMULATED</span><span class="chip outline">VCOIN / VCU</span><span class="chip version">v0.3</span></div>
 </header>
 <div class="notice"><span class="notice-dot"></span> Полностью искусственный рынок. Никаких реальных котировок, денег, биржевых подключений или торговых сигналов.</div>
 <div class="metrics">
@@ -29,8 +29,12 @@
 <label class="toggle"><input type="checkbox" id="shockEnabled" checked><span class="track"></span><span>Убрать покупательскую ликвидность перед продажей</span></label>
 <button class="button apply" id="apply">Применить и начать заново</button><div class="settings-help" id="error" role="alert"></div><p class="footnote">Изменение параметров создаёт новый эксперимент. Одинаковые seed и настройки воспроизводят одинаковые события; после шока агенты реагируют на новые цены.</p></section>
 <section class="pane activity-pane"><div class="pane-heading"><div><div class="pane-overline">AGENT BEHAVIOR</div><h2>Активность трейдеров</h2></div><span class="chip small">1 000 ID</span></div>
-<div id="agents" class="agents"></div><p class="footnote">NOISE — случайные; MAKER — добавляют лимитные заявки; TREND — следуют за движением; REVERSION — действуют против тренда. Это упрощённые правила, без счетов и капитала.</p>
+<div id="agents" class="agents"></div><p class="footnote">NOISE — случайные; MAKER — добавляют лимитные заявки; TREND — следуют за движением; REVERSION — действуют против тренда. Агенты используют виртуальные балансы и не могут тратить незарезервированные средства сверх остатка.</p>
 <div class="divider"></div><div class="pane-overline">SHOCK OBSERVATION</div><div id="shockReport" class="shock-report">Событие ещё не произошло · тик <span id="scheduled">160</span></div></section>
+<section class="pane economy-pane"><div class="pane-heading"><div><div class="pane-overline">CLOSED-SYSTEM ACCOUNTING · v0.3</div><h2>Экономика виртуального рынка</h2></div><span id="econPass" class="chip small">Проверка…</span></div>
+<div class="economy-stats"><div><span>СЧЕТОВ</span><strong id="accountCount">—</strong></div><div><span>ИСПОЛНЕНИЙ</span><strong id="settledFills">—</strong></div><div><span>ОТКЛОНЕНО ЗАЯВОК</span><strong id="deniedActions">—</strong></div><div><span>СОВОКУПНЫЙ PnL</span><strong id="totalPnl">—</strong></div></div>
+<div class="leaders-grid"><div><div class="pane-overline">ЛИДЕРЫ · MARK-TO-MARKET PnL</div><div id="winners" class="leader-list"></div></div><div><div class="pane-overline">ОТСТАЮЩИЕ · MARK-TO-MARKET PnL</div><div id="losers" class="leader-list"></div></div></div>
+<p class="footnote">Все средства виртуальные (VCOIN/VCU). Лимитные заявки блокируют средства до исполнения или отмены. PnL вычисляется относительно начальной оценки и не равен реализованной прибыли. Совокупный оценочный PnL может изменяться при переоценке имеющихся монет; при этом деньги и монеты не создаются и не исчезают. Комиссий и эмиссии нет.</p></section>
 <section class="pane feed-pane"><div class="pane-heading"><div><div class="pane-overline">EXECUTION TAPE</div><h2>Последние сделки</h2></div></div><div class="trade-head"><span>ТИК</span><span>СТОРОНА</span><span>ЦЕНА</span><span>ОБЪЁМ</span></div><div id="tradeFeed" class="trade-feed"></div></section>
 </main>
 <footer><span>KAIROS MARKET LAB / SYNTHETIC RESEARCH / LOCALHOST ONLY</span><span>Ничего из этого не связано с реальными биржами или Kairos AGI</span></footer>
