@@ -26,6 +26,10 @@ class SessionConfig:
     candle_ticks: int = 5
 
     def __post_init__(self) -> None:
+        for field in ("ticks", "shock_tick", "cancel_percent", "sell_qty",
+                      "events_per_tick", "candle_ticks"):
+            if type(getattr(self, field)) is not int:
+                raise ValueError(f"{field} must be an integer")
         if not (20 <= self.ticks <= 2000 and 1 <= self.shock_tick <= self.ticks):
             raise ValueError("ticks must be 20..2000 and shock_tick within ticks")
         if not (0 <= self.cancel_percent <= 100):
