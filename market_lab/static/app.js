@@ -57,7 +57,6 @@ function render() {
  $('trades').textContent=state.total_trades.toLocaleString('ru-RU');
  $('depth').textContent=m.bid_depth_8;
  $('tick').textContent=state.tick; $('maxTicks').textContent=cfg.ticks;
- $('scheduled').textContent=cfg.shock_tick;
  $('progress').style.width=`${100*state.tick/cfg.ticks}%`;
  $('shockMarker').style.left=`${100*cfg.shock_tick/cfg.ticks}%`;
  $('runStatus').textContent=state.done?'ЗАВЕРШЁН':playing?'СИМУЛЯЦИЯ ИДЁТ':'ПАУЗА / ГОТОВ';
