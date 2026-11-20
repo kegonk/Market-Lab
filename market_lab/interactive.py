@@ -13,6 +13,7 @@ import random
 
 from .simulation import Config, Execution, OrderBook, Side
 from .economy import SyntheticEconomy
+from .population import PopulationEvolution
 
 
 @dataclass(frozen=True)
@@ -30,11 +31,18 @@ class SessionConfig:
     bankruptcy_threshold_percent: int = 20
     stop_denials: int = 6
     maker_caution_ticks: int = 35
+    evolution_enabled: bool = False
+    waiting_agents: int = 100
+    evolution_review_ticks: int = 20
+    weak_reviews_to_exit: int = 3
+    max_joins_per_review: int = 10
 
     def __post_init__(self) -> None:
         for field in ('seed', 'ticks', 'shock_tick', 'cancel_percent', 'sell_qty',
                       'events_per_tick', 'candle_ticks', 'maker_fee_bps', 'taker_fee_bps',
-                      'bankruptcy_threshold_percent', 'stop_denials', 'maker_caution_ticks'):
+                      'bankruptcy_threshold_percent', 'stop_denials', 'maker_caution_ticks',
+                      'waiting_agents', 'evolution_review_ticks', 'weak_reviews_to_exit',
+                      'max_joins_per_review'):
             if type(getattr(self, field)) is not int:
                 raise ValueError(f'{field} must be an integer')
         if not (20 <= self.ticks <= 2000 and 1 <= self.shock_tick <= self.ticks):
@@ -51,6 +59,12 @@ class SessionConfig:
             raise ValueError('invalid lifecycle thresholds')
         if not (0 <= self.maker_caution_ticks <= 2000):
             raise ValueError('maker_caution_ticks must be 0..2000')
+        if not (0 <= self.waiting_agents <= 500 and 5 <= self.evolution_review_ticks <= 500
+                and 2 <= self.weak_reviews_to_exit <= 20
+                and 1 <= self.max_joins_per_review <= 100):
+            raise ValueError('invalid evolution parameters')
+        if type(self.evolution_enabled) is not bool:
+            raise ValueError('evolution_enabled must be boolean')
         if not isinstance(self.shock_enabled, bool):
             raise ValueError("shock_enabled must be boolean")
         if not isinstance(self.seed, int) or isinstance(self.seed, bool) or abs(self.seed) > 2**31:
@@ -71,6 +85,12 @@ class SyntheticMarket:
                                         taker_fee_bps=self.config.taker_fee_bps,
                                         bankruptcy_threshold_percent=self.config.bankruptcy_threshold_percent,
                                         stop_denials=self.config.stop_denials)
+        self.population = (PopulationEvolution(
+            self.economy, reserve_agents=self.config.waiting_agents,
+            review_every=self.config.evolution_review_ticks,
+            weak_reviews_to_exit=self.config.weak_reviews_to_exit,
+            max_joins_per_review=self.config.max_joins_per_review)
+            if self.config.evolution_enabled else None)
         self.maker_withheld = 0
         self.maker_widened = 0
         self.tick = 0
@@ -146,11 +166,18 @@ class SyntheticMarket:
             raise
 
     def _act(self, seq: int) -> None:
+        # Draw from the fixed 1,000-ID universe, preserving the original RNG
+        # event tape. Waitlisted / exited identities cannot place orders.
         agent_id = self.rng.randrange(1000)
         agent = f"A{agent_id:04d}"
-        kind = ("NOISE" if agent_id % 10 < 5 else
-                "MAKER" if agent_id % 10 < 7 else
-                "TREND" if agent_id % 10 < 9 else "REVERSION")
+        if self.population:
+            if agent not in self.population.active:
+                return
+            kind = self.population.rule_for(agent)
+        else:
+            kind = ("NOISE" if agent_id % 10 < 5 else
+                    "MAKER" if agent_id % 10 < 7 else
+                    "TREND" if agent_id % 10 < 9 else "REVERSION")
         self.agent_actions[kind] += 1
         if not self.economy.can_trade(agent):
             return
@@ -240,6 +267,10 @@ class SyntheticMarket:
         if self.tick % self.config.candle_ticks == 0 or self.tick == self.config.ticks:
             self.candles.append(dict(self._candle))
         self.economy.review_lifecycle(self.book, self.book.last_trade_ticks)
+        if self.population:
+            self.population.review(self.tick, self.book.last_trade_ticks, self.book)
+            if not self.population.check():
+                raise AssertionError('POPULATION_INVARIANT_FAILED')
         if not self.economy.check(self.book):
             raise AssertionError('ECONOMY_INVARIANT_FAILED')
         if not self.book.check_conservation():
@@ -272,6 +303,8 @@ class SyntheticMarket:
                 "shock": self.shock, "events": list(self.event_log),
                 "recent_trades": self.recent_trades[-20:],
                 "economy": self.economy.snapshot(self.book.last_trade_ticks),
+                "population": (self.population.snapshot(self.book.last_trade_ticks) if self.population
+                               else {"enabled": False, "source": "SIMULATED"}),
                 "maker_risk": {"cautious": self.maker_cautious(),
                                "withheld_quotes": self.maker_withheld,
                                "widened_quotes": self.maker_widened},

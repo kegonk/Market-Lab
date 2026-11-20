@@ -30,10 +30,11 @@ function togglePlay() {
  timer=setInterval(() => step(Number($('speed').value)), 190);
 }
 function settings() {
- const fields={seed:'seed',ticks:'ticks',shockTick:'shock_tick',cancelPercent:'cancel_percent',sellQty:'sell_qty',eventsPerTick:'events_per_tick',makerFee:'maker_fee_bps',takerFee:'taker_fee_bps',bankruptcyThreshold:'bankruptcy_threshold_percent',stopDenials:'stop_denials',makerCautionTicks:'maker_caution_ticks'};
+ const fields={seed:'seed',ticks:'ticks',shockTick:'shock_tick',cancelPercent:'cancel_percent',sellQty:'sell_qty',eventsPerTick:'events_per_tick',makerFee:'maker_fee_bps',takerFee:'taker_fee_bps',bankruptcyThreshold:'bankruptcy_threshold_percent',stopDenials:'stop_denials',makerCautionTicks:'maker_caution_ticks',waitingAgents:'waiting_agents',evolutionReviewTicks:'evolution_review_ticks',weakReviewsToExit:'weak_reviews_to_exit',maxJoinsPerReview:'max_joins_per_review'};
  const cfg={};
  for(const [id,key] of Object.entries(fields)) {const raw=$(id).value.trim(); if(!/^-?\d+$/.test(raw)) throw new Error(`Введите целое число: ${id}`); cfg[key]=Number(raw);}
  cfg.shock_enabled=$('shockEnabled').checked;
+ cfg.evolution_enabled=$('evolutionEnabled').checked;
  return cfg;
 }
 async function reset() {
@@ -95,6 +96,40 @@ function render() {
   const cards=(people)=>people.map(a=>'<div class="leader-row"><span>'+a.agent+' · '+a.status+'</span><span>R '+number(a.realized_pnl_vcu,1)+' / U '+number(a.unrealized_pnl_vcu,1)+'</span><strong class="'+(a.mark_pnl_vcu>=0?'buy':'sell')+'">'+(a.mark_pnl_vcu>=0?'+':'')+number(a.mark_pnl_vcu,1)+'</strong></div>').join('');
   $('winners').innerHTML=cards(econ.leaders);
   $('losers').innerHTML=cards(econ.laggards);
+ }
+ const population=state.population;
+ if(population && population.enabled){
+  $('populationActive').textContent=population.active;
+  $('populationWaiting').textContent=population.waiting;
+  $('populationRetired').textContent=population.retired;
+  $('populationJoined').textContent=population.admitted;
+  $('populationSwitches').textContent=population.strategy_switches;
+  $('populationCompared').textContent=population.ahead_of_hold+' / '+population.behind_hold;
+  $('populationReviews').textContent=population.review_cycles;
+  $('populationRules').replaceChildren();
+  const ruleTotal=Math.max(1,population.active);
+  for(const [name,count] of Object.entries(population.rule_counts)){
+   const line=document.createElement('div');line.className='agent-line';
+   const label=document.createElement('div');label.className='agent-label';label.textContent=name;
+   const track=document.createElement('div');track.className='agent-track';
+   const bar=document.createElement('div');bar.style.width=`${count*100/ruleTotal}%`;track.appendChild(bar);
+   const value=document.createElement('div');value.className='agent-count';value.textContent=count;
+   line.append(label,track,value);$('populationRules').appendChild(line);
+  }
+
+  $('populationInvariant').textContent=population.conservation_pass?'✓ PASS':'✕ FAIL';
+  $('populationEvents').replaceChildren();
+  const entries=[...population.recent_events].reverse();
+  for(const e of entries){
+   const div=document.createElement('div');div.className='trade-row population-event';
+   div.textContent=`Тик ${e.tick} · ${e.kind} · ${e.agent}: ${e.note}`;
+   $('populationEvents').appendChild(div);
+  }
+  if(!entries.length){const div=document.createElement('div');div.className='empty';div.textContent='Ожидание первого события популяции';$('populationEvents').appendChild(div);}
+ }else{
+  for(const id of ['populationActive','populationWaiting','populationRetired','populationJoined','populationSwitches','populationCompared','populationReviews','populationInvariant'])$(id).textContent='—';
+  $('populationEvents').textContent='Эволюция отключена';
+  $('populationRules').replaceChildren();
  }
  $('empty').classList.toggle('hide',state.tick>0);
  $('step').disabled=state.done; $('play').disabled=state.done;
