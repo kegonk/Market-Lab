@@ -8,6 +8,7 @@ from __future__ import annotations
 import argparse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
+from urllib.parse import urlsplit
 from pathlib import Path
 from threading import Lock
 
@@ -49,7 +50,8 @@ def create_handler():
             if not self._local():
                 self._json(403, {'error': 'LOCAL_ONLY'})
                 return
-            if self.path == '/api/state':
+            path = urlsplit(self.path).path
+            if path == '/api/state':
                 with lock:
                     payload = market.state()
                 self._json(200, payload)
@@ -57,10 +59,10 @@ def create_handler():
             allowed = {'/': ('index.html', 'text/html; charset=utf-8'),
                        '/app.js': ('app.js', 'application/javascript; charset=utf-8'),
                        '/style.css': ('style.css', 'text/css; charset=utf-8')}
-            if self.path not in allowed:
+            if path not in allowed:
                 self._json(404, {'error': 'NOT_FOUND'})
                 return
-            filename, content_type = allowed[self.path]
+            filename, content_type = allowed[path]
             self._send(200, (_STATIC / filename).read_bytes(), content_type)
 
         def do_POST(self) -> None:

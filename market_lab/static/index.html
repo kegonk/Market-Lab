@@ -5,7 +5,7 @@
 <div class="shell">
 <header class="header">
  <div class="brand"><div class="mark"><span></span><span></span><span></span></div><div><div class="eyebrow">AUTONOMOUS RESEARCH SYSTEM</div><h1>MARKET <em>LAB</em></h1></div></div>
- <div class="head-right"><span class="chip synthetic">● SIMULATED</span><span class="chip outline">VCOIN / VCU</span><span class="chip version">v0.3</span></div>
+ <div class="head-right"><span class="chip synthetic">● SIMULATED</span><span class="chip outline">VCOIN / VCU</span><span class="chip version">v0.4</span></div>
 </header>
 <div class="notice"><span class="notice-dot"></span> Полностью искусственный рынок. Никаких реальных котировок, денег, биржевых подключений или торговых сигналов.</div>
 <div class="metrics">
@@ -26,15 +26,23 @@
 <div class="book" id="bids"></div><p class="footnote">Заявки находятся в собственной виртуальной книге. Совпадение выполняется по приоритету цены и времени.</p></section>
 <section class="pane settings-pane"><div class="pane-heading"><div><div class="pane-overline">EXPERIMENT LQ-001</div><h2>Параметры опыта</h2></div></div>
 <div class="settings-grid"><label>Случайный seed <input id="seed" type="number" value="42" min="-2147483648" max="2147483648"></label><label>Тиков в запуске <input id="ticks" type="number" value="320" min="20" max="2000"></label><label>Шок на тике <input id="shockTick" type="number" value="160" min="1"></label><label>Отмена BUY, % <input id="cancelPercent" type="number" value="85" min="0" max="100"></label><label>Размер агрессивной продажи <input id="sellQty" type="number" value="26" min="1" max="500"></label><label>Действий агентов / тик <input id="eventsPerTick" type="number" value="6" min="1" max="25"></label></div>
+<div class="settings-grid"><label>Maker комиссия, bps <input id="makerFee" type="number" value="10" min="0" max="1000"></label><label>Taker комиссия, bps <input id="takerFee" type="number" value="20" min="0" max="1000"></label><label>Стоп по капиталу, % <input id="bankruptcyThreshold" type="number" value="20" min="0" max="100"></label><label>Отказов до остановки <input id="stopDenials" type="number" value="6" min="1" max="100"></label><label>Осторожность MM, тиков <input id="makerCautionTicks" type="number" value="35" min="0" max="2000"></label></div>
 <label class="toggle"><input type="checkbox" id="shockEnabled" checked><span class="track"></span><span>Убрать покупательскую ликвидность перед продажей</span></label>
 <button class="button apply" id="apply">Применить и начать заново</button><div class="settings-help" id="error" role="alert"></div><p class="footnote">Изменение параметров создаёт новый эксперимент. Одинаковые seed и настройки воспроизводят одинаковые события; после шока агенты реагируют на новые цены.</p></section>
 <section class="pane activity-pane"><div class="pane-heading"><div><div class="pane-overline">AGENT BEHAVIOR</div><h2>Активность трейдеров</h2></div><span class="chip small">1 000 ID</span></div>
 <div id="agents" class="agents"></div><p class="footnote">NOISE — случайные; MAKER — добавляют лимитные заявки; TREND — следуют за движением; REVERSION — действуют против тренда. Агенты используют виртуальные балансы и не могут тратить незарезервированные средства сверх остатка.</p>
 <div class="divider"></div><div class="pane-overline">SHOCK OBSERVATION</div><div id="shockReport" class="shock-report">Событие ещё не произошло · тик <span id="scheduled">160</span></div></section>
-<section class="pane economy-pane"><div class="pane-heading"><div><div class="pane-overline">CLOSED-SYSTEM ACCOUNTING · v0.3</div><h2>Экономика виртуального рынка</h2></div><span id="econPass" class="chip small">Проверка…</span></div>
-<div class="economy-stats"><div><span>СЧЕТОВ</span><strong id="accountCount">—</strong></div><div><span>ИСПОЛНЕНИЙ</span><strong id="settledFills">—</strong></div><div><span>ОТКЛОНЕНО ЗАЯВОК</span><strong id="deniedActions">—</strong></div><div><span>СОВОКУПНЫЙ PnL</span><strong id="totalPnl">—</strong></div></div>
-<div class="leaders-grid"><div><div class="pane-overline">ЛИДЕРЫ · MARK-TO-MARKET PnL</div><div id="winners" class="leader-list"></div></div><div><div class="pane-overline">ОТСТАЮЩИЕ · MARK-TO-MARKET PnL</div><div id="losers" class="leader-list"></div></div></div>
-<p class="footnote">Все средства виртуальные (VCOIN/VCU). Лимитные заявки блокируют средства до исполнения или отмены. PnL вычисляется относительно начальной оценки и не равен реализованной прибыли. Совокупный оценочный PnL может изменяться при переоценке имеющихся монет; при этом деньги и монеты не создаются и не исчезают. Комиссий и эмиссии нет.</p></section>
+<section class="pane economy-pane"><div class="pane-heading"><div><div class="pane-overline">CLOSED-SYSTEM ACCOUNTING · v0.4</div><h2>Экономика виртуального рынка</h2></div><span id="econPass" class="chip small">Проверка…</span></div>
+<div class="economy-stats"><div><span>СЧЕТОВ</span><strong id="accountCount">—</strong></div><div><span>ИСПОЛНЕНИЙ</span><strong id="settledFills">—</strong></div><div><span>ОТКЛОНЕНО ЗАЯВОК</span><strong id="deniedActions">—</strong></div><div><span>СОВОКУПНЫЙ PnL</span><strong id="totalPnl">—</strong></div>
+<div><span>КОМИССИИ БИРЖЕ</span><strong id="totalFees">—</strong></div>
+<div><span>РЕАЛИЗОВАННЫЙ PnL</span><strong id="realizedPnl">—</strong></div>
+<div><span>НЕРЕАЛИЗОВАННЫЙ PnL</span><strong id="unrealizedPnl">—</strong></div>
+<div><span>ЗАРАБОТАЛИ / ПОТЕРЯЛИ</span><strong id="winningLosing">—</strong></div>
+<div><span>БАНКРОТ / ОСТАНОВЛЕНЫ</span><strong id="bankruptStopped">—</strong></div>
+<div><span>УЧАСТНИКОВ ТОРГОВАЛО</span><strong id="tradedWallets">—</strong></div>
+<div><span>РЕЖИМ МАРКЕТМЕЙКЕРОВ</span><strong id="makerRisk">—</strong></div></div>
+<div class="leaders-grid"><div><div class="pane-overline">ЛИДЕРЫ · ОБЩИЙ PnL</div><div id="winners" class="leader-list"></div></div><div><div class="pane-overline">ОТСТАЮЩИЕ · ОБЩИЙ PnL</div><div id="losers" class="leader-list"></div></div></div>
+<p class="footnote">Все средства виртуальные (VCOIN/VCU). Лимитные заявки блокируют средства до исполнения или отмены. PnL вычисляется относительно начальной оценки и не равен реализованной прибыли. Совокупный оценочный PnL может изменяться при переоценке имеющихся монет; при этом деньги и монеты не создаются и не исчезают. Комиссии покупателя и продавца направляются в отдельный виртуальный кошелёк EXCHANGE. PnL считается по FIFO и включает комиссии. «Банкрот» — модельная остановка, когда оценка капитала опускается до указанной доли стартового; долгов, плеча и автоматической ликвидации нет. Доходность по синтетическому рынку не является прогнозом реального рынка.</p></section>
 <section class="pane feed-pane"><div class="pane-heading"><div><div class="pane-overline">EXECUTION TAPE</div><h2>Последние сделки</h2></div></div><div class="trade-head"><span>ТИК</span><span>СТОРОНА</span><span>ЦЕНА</span><span>ОБЪЁМ</span></div><div id="tradeFeed" class="trade-feed"></div></section>
 </main>
 <footer><span>KAIROS MARKET LAB / SYNTHETIC RESEARCH / LOCALHOST ONLY</span><span>Ничего из этого не связано с реальными биржами или Kairos AGI</span></footer>

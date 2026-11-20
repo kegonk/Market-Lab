@@ -124,7 +124,7 @@ class OrderBook:
         return removed
 
     def execute_market(self, side: Side, qty: int, *, cash_budget_ticks: int | None = None,
-                       exclude_agent: str | None = None) -> Execution:
+                       exclude_agent: str | None = None, buyer_fee_bps: int = 0) -> Execution:
         if qty <= 0:
             raise ValueError("market order qty must be positive")
         opposite: Side = "SELL" if side == "BUY" else "BUY"
@@ -137,18 +137,21 @@ class OrderBook:
         matched: list[tuple[str, str, int, int]] = []
         if cash_budget_ticks is not None and (side != 'BUY' or cash_budget_ticks < 0):
             raise ValueError('cash budget is only valid for BUY market orders')
+        if type(buyer_fee_bps) is not int or not 0 <= buyer_fee_bps <= 1000:
+            raise ValueError('INVALID_FEE_RATE')
         for resting in candidates:
             if left <= 0:
                 break
             take = min(left, resting.remaining)
             if cash_budget_ticks is not None:
-                take = min(take, cash_budget_ticks // resting.price_ticks)
+                fee_per_coin = (resting.price_ticks * buyer_fee_bps + 9999) // 10000
+                take = min(take, cash_budget_ticks // (resting.price_ticks + fee_per_coin))
             if take <= 0:
                 continue
             resting.remaining -= take
             left -= take
             if cash_budget_ticks is not None:
-                cash_budget_ticks -= take * resting.price_ticks
+                cash_budget_ticks -= take * (resting.price_ticks + fee_per_coin)
             matched.append((resting.order_id, resting.agent, resting.price_ticks, take))
             self.last_trade_ticks = resting.price_ticks
             fills.append((resting.price_ticks, take))

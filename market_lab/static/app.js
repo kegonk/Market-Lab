@@ -30,7 +30,7 @@ function togglePlay() {
  timer=setInterval(() => step(Number($('speed').value)), 190);
 }
 function settings() {
- const fields={seed:'seed',ticks:'ticks',shockTick:'shock_tick',cancelPercent:'cancel_percent',sellQty:'sell_qty',eventsPerTick:'events_per_tick'};
+ const fields={seed:'seed',ticks:'ticks',shockTick:'shock_tick',cancelPercent:'cancel_percent',sellQty:'sell_qty',eventsPerTick:'events_per_tick',makerFee:'maker_fee_bps',takerFee:'taker_fee_bps',bankruptcyThreshold:'bankruptcy_threshold_percent',stopDenials:'stop_denials',makerCautionTicks:'maker_caution_ticks'};
  const cfg={};
  for(const [id,key] of Object.entries(fields)) {const raw=$(id).value.trim(); if(!/^-?\d+$/.test(raw)) throw new Error(`Введите целое число: ${id}`); cfg[key]=Number(raw);}
  cfg.shock_enabled=$('shockEnabled').checked;
@@ -78,14 +78,21 @@ function render() {
  : '<div class="empty">Сделки появятся после запуска</div>';
  const econ=state.economy;
  if(econ){
-  const safe=state.economy_conservation_pass && state.conservation_pass;
+  const safe=state.economy_conservation_pass && state.conservation_pass && econ.pnl_identity_pass;
   $('econPass').textContent=safe?'✓ CONSERVED':'✕ ACCOUNTING ERROR';
   $('econPass').classList.toggle('fail',!safe);
   $('accountCount').textContent=econ.wallet_count.toLocaleString('ru-RU');
   $('settledFills').textContent=econ.fills_settled.toLocaleString('ru-RU');
   $('deniedActions').textContent=econ.denied_actions.toLocaleString('ru-RU');
   $('totalPnl').textContent=number(econ.total_mark_pnl_vcu,1)+' VCU';
-  const cards=(people)=>people.map(a=>'<div class="leader-row"><span>'+a.agent+'</span><span>'+number(a.coin_qty,0)+' VCOIN</span><strong class="'+(a.mark_pnl_vcu>=0?'buy':'sell')+'">'+(a.mark_pnl_vcu>=0?'+':'')+number(a.mark_pnl_vcu,1)+'</strong></div>').join('');
+  $('totalFees').textContent=number(econ.fees_total_vcu,1)+' VCU';
+  $('realizedPnl').textContent=number(econ.total_realized_pnl_vcu,1)+' VCU';
+  $('unrealizedPnl').textContent=number(econ.total_unrealized_pnl_vcu,1)+' VCU';
+  $('winningLosing').textContent=econ.winners+' / '+econ.losers;
+  $('bankruptStopped').textContent=econ.bankrupt+' / '+econ.stopped;
+  $('tradedWallets').textContent=econ.traded_wallets;
+  $('makerRisk').textContent=state.maker_risk.cautious?'ОСТОРОЖНОСТЬ':'НОРМАЛЬНЫЙ';
+  const cards=(people)=>people.map(a=>'<div class="leader-row"><span>'+a.agent+' · '+a.status+'</span><span>R '+number(a.realized_pnl_vcu,1)+' / U '+number(a.unrealized_pnl_vcu,1)+'</span><strong class="'+(a.mark_pnl_vcu>=0?'buy':'sell')+'">'+(a.mark_pnl_vcu>=0?'+':'')+number(a.mark_pnl_vcu,1)+'</strong></div>').join('');
   $('winners').innerHTML=cards(econ.leaders);
   $('losers').innerHTML=cards(econ.laggards);
  }
