@@ -65,7 +65,8 @@ class TestSyntheticMarket(unittest.TestCase):
 
     def test_config_and_step_validation(self):
         for bad in (dict(seed=True),dict(ticks=2),dict(shock_tick=5000),
-                    dict(cancel_percent=140),dict(events_per_tick=0),dict(shock_enabled='true')):
+                    dict(cancel_percent=140),dict(events_per_tick=0),dict(shock_enabled='true'),
+                    dict(ticks=40.5),dict(events_per_tick=True)):
             with self.subTest(bad=bad),self.assertRaises(ValueError):
                 SessionConfig(**bad)
         session=SyntheticMarket()
