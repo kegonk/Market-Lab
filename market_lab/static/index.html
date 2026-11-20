@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kairos Market Lab · Synthetic Exchange</title><link rel="stylesheet" href="/style.css"><script src="/app.js" defer></script></head>
+<body>
+<div class="shell">
+<header class="header">
+ <div class="brand"><div class="mark"><span></span><span></span><span></span></div><div><div class="eyebrow">AUTONOMOUS RESEARCH SYSTEM</div><h1>MARKET <em>LAB</em></h1></div></div>
+ <div class="head-right"><span class="chip synthetic">● SIMULATED</span><span class="chip outline">VCOIN / VCU</span><span class="chip version">v0.2</span></div>
+</header>
+<div class="notice"><span class="notice-dot"></span> Полностью искусственный рынок. Никаких реальных котировок, денег, биржевых подключений или торговых сигналов.</div>
+<div class="metrics">
+ <div class="metric"><div class="label">ПОСЛЕДНЯЯ ЦЕНА</div><div class="value"><span id="last">100.0</span><small>VCU</small></div><div class="hint" id="priceDelta">Цена формируется виртуальными сделками</div></div>
+ <div class="metric"><div class="label">СПРЕД</div><div class="value"><span id="spread">—</span><small>bps</small></div><div class="hint">Разница BID / ASK</div></div>
+ <div class="metric"><div class="label">ОБЪЁМ СДЕЛОК</div><div class="value"><span id="volume">0</span><small>ед.</small></div><div class="hint"><span id="trades">0</span> исполнений по уровням</div></div>
+ <div class="metric"><div class="label">ГЛУБИНА BUY · 8 УРОВНЕЙ</div><div class="value"><span id="depth">64</span><small>ед.</small></div><div class="hint">Доступная покупательская ликвидность</div></div>
+</div>
+<main class="layout">
+<section class="pane chart-pane"><div class="pane-heading"><div><div class="pane-overline">SYNTHETIC EXCHANGE · PRICE DISCOVERY</div><h2>График торгов <span class="subtle" id="barCount">—</span></h2></div><div class="key"><span class="key-up">■ Рост</span><span class="key-down">■ Падение</span><span class="key-shock">┊ Шок</span></div></div>
+<div class="chart-holder"><canvas id="candleCanvas" aria-label="Свечной график синтетических сделок"></canvas><div class="chart-overlay" id="empty">Нажмите ▶ Запуск, чтобы оживить рынок</div></div>
+<div class="timeline"><span>ТИК <strong id="tick">0</strong> / <span id="maxTicks">320</span></span><div class="progress"><div id="progress"></div><div id="shockMarker" title="Момент события"></div></div><span id="runStatus">ГОТОВ К ЗАПУСКУ</span></div>
+<div class="control-bar"><button id="play" class="button primary">▶ Запуск</button><button id="step" class="button">⏭ 1 тик</button><button id="reset" class="button">↺ Сброс</button><label class="speed">СКОРОСТЬ <select id="speed"><option value="1">×1</option><option value="4" selected>×4</option><option value="12">×12</option><option value="25">×25</option></select></label></div>
+</section>
+<section class="pane book-pane"><div class="pane-heading"><div><div class="pane-overline">LIMIT ORDER BOOK</div><h2>Биржевой стакан</h2></div><span class="chip small">12 УРОВНЕЙ</span></div>
+<div class="book-legend"><span>ЦЕНА</span><span>КОЛ-ВО</span><span>ГЛУБИНА</span></div><div class="book" id="asks"></div>
+<div class="book-mid"><span id="midPrice">100.0</span><span>VCU</span><span id="bidask">BID / ASK</span></div>
+<div class="book" id="bids"></div><p class="footnote">Заявки находятся в собственной виртуальной книге. Совпадение выполняется по приоритету цены и времени.</p></section>
+<section class="pane settings-pane"><div class="pane-heading"><div><div class="pane-overline">EXPERIMENT LQ-001</div><h2>Параметры опыта</h2></div></div>
+<div class="settings-grid"><label>Случайный seed <input id="seed" type="number" value="42" min="-2147483648" max="2147483648"></label><label>Тиков в запуске <input id="ticks" type="number" value="320" min="20" max="2000"></label><label>Шок на тике <input id="shockTick" type="number" value="160" min="1"></label><label>Отмена BUY, % <input id="cancelPercent" type="number" value="85" min="0" max="100"></label><label>Размер агрессивной продажи <input id="sellQty" type="number" value="26" min="1" max="500"></label><label>Действий агентов / тик <input id="eventsPerTick" type="number" value="6" min="1" max="25"></label></div>
+<label class="toggle"><input type="checkbox" id="shockEnabled" checked><span class="track"></span><span>Убрать покупательскую ликвидность перед продажей</span></label>
+<button class="button apply" id="apply">Применить и начать заново</button><div class="settings-help" id="error" role="alert"></div><p class="footnote">Изменение параметров создаёт новый эксперимент. Одинаковые seed и настройки воспроизводят одинаковые события; после шока агенты реагируют на новые цены.</p></section>
+<section class="pane activity-pane"><div class="pane-heading"><div><div class="pane-overline">AGENT BEHAVIOR</div><h2>Активность трейдеров</h2></div><span class="chip small">1 000 ID</span></div>
+<div id="agents" class="agents"></div><p class="footnote">NOISE — случайные; MAKER — добавляют лимитные заявки; TREND — следуют за движением; REVERSION — действуют против тренда. Это упрощённые правила, без счетов и капитала.</p>
+<div class="divider"></div><div class="pane-overline">SHOCK OBSERVATION</div><div id="shockReport" class="shock-report">Событие ещё не произошло · тик <span id="scheduled">160</span></div></section>
+<section class="pane feed-pane"><div class="pane-heading"><div><div class="pane-overline">EXECUTION TAPE</div><h2>Последние сделки</h2></div></div><div class="trade-head"><span>ТИК</span><span>СТОРОНА</span><span>ЦЕНА</span><span>ОБЪЁМ</span></div><div id="tradeFeed" class="trade-feed"></div></section>
+</main>
+<footer><span>KAIROS MARKET LAB / SYNTHETIC RESEARCH / LOCALHOST ONLY</span><span>Ничего из этого не связано с реальными биржами или Kairos AGI</span></footer>
+</div></body></html>
