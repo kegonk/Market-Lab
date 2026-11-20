@@ -25,10 +25,16 @@ class SessionConfig:
     sell_qty: int = 26
     events_per_tick: int = 6
     candle_ticks: int = 5
+    maker_fee_bps: int = 10
+    taker_fee_bps: int = 20
+    bankruptcy_threshold_percent: int = 20
+    stop_denials: int = 6
+    maker_caution_ticks: int = 35
 
     def __post_init__(self) -> None:
         for field in ('seed', 'ticks', 'shock_tick', 'cancel_percent', 'sell_qty',
-                      'events_per_tick', 'candle_ticks'):
+                      'events_per_tick', 'candle_ticks', 'maker_fee_bps', 'taker_fee_bps',
+                      'bankruptcy_threshold_percent', 'stop_denials', 'maker_caution_ticks'):
             if type(getattr(self, field)) is not int:
                 raise ValueError(f'{field} must be an integer')
         if not (20 <= self.ticks <= 2000 and 1 <= self.shock_tick <= self.ticks):
@@ -39,6 +45,12 @@ class SessionConfig:
             raise ValueError("sell_qty or events_per_tick out of range")
         if not (1 <= self.candle_ticks <= 60):
             raise ValueError("candle_ticks must be 1..60")
+        if not (0 <= self.maker_fee_bps <= 1000 and 0 <= self.taker_fee_bps <= 1000):
+            raise ValueError('fee rates must be 0..1000 basis points')
+        if not (0 <= self.bankruptcy_threshold_percent <= 100 and 1 <= self.stop_denials <= 100):
+            raise ValueError('invalid lifecycle thresholds')
+        if not (0 <= self.maker_caution_ticks <= 2000):
+            raise ValueError('maker_caution_ticks must be 0..2000')
         if not isinstance(self.shock_enabled, bool):
             raise ValueError("shock_enabled must be boolean")
         if not isinstance(self.seed, int) or isinstance(self.seed, bool) or abs(self.seed) > 2**31:
@@ -54,7 +66,13 @@ class SyntheticMarket:
         self.book = OrderBook(Config(ticks=max(self.config.ticks, 2),
                                      shock_tick=1, initial_levels=40,
                                      units_per_level=8, agent_count=1000))
-        self.economy = SyntheticEconomy(self.book)
+        self.economy = SyntheticEconomy(self.book,
+                                        maker_fee_bps=self.config.maker_fee_bps,
+                                        taker_fee_bps=self.config.taker_fee_bps,
+                                        bankruptcy_threshold_percent=self.config.bankruptcy_threshold_percent,
+                                        stop_denials=self.config.stop_denials)
+        self.maker_withheld = 0
+        self.maker_widened = 0
         self.tick = 0
         self.price_history = [self.book.last_trade_ticks]
         self.candles: list[dict] = []
@@ -99,19 +117,20 @@ class SyntheticMarket:
         if accepted == 0:
             return Execution(side, qty, 0, qty, None, None, None, None, ())
         e = self.book.execute_market(side, accepted, cash_budget_ticks=budget,
-                                     exclude_agent=agent)
+                                     exclude_agent=agent,
+                                     buyer_fee_bps=self.economy.taker_fee_bps if side == 'BUY' else 0)
         self.economy.settle(agent, side, e.matched_orders)
         self._record_execution(e, agent, agent_type)
         return e
 
     def _limit(self, side: Side, qty: int, agent: str, seq: int,
-               anchor: int | None = None) -> None:
+               anchor: int | None = None, wide: bool = False) -> None:
         # Place orders *passively*, observing the current opposite best quote.
         bid = self.book.best("BUY")
         ask = self.book.best("SELL")
         center = anchor if anchor is not None else self.book.last_trade_ticks
         center = max(5, center)
-        dist = self.rng.randint(1, 7)
+        dist = self.rng.randint(8, 20) if wide else self.rng.randint(1, 7)
         price = center - dist if side == "BUY" else center + dist
         if side == "BUY" and ask is not None:
             price = min(price, ask - 1)
@@ -133,16 +152,25 @@ class SyntheticMarket:
                 "MAKER" if agent_id % 10 < 7 else
                 "TREND" if agent_id % 10 < 9 else "REVERSION")
         self.agent_actions[kind] += 1
+        if not self.economy.can_trade(agent):
+            return
         last = self.book.last_trade_ticks
         reference = self.price_history[max(0, len(self.price_history) - 8)]
         trend = last - reference
         qty = self.rng.randint(1, 5)
 
         if kind == "MAKER":
-            # Passive replenishment reacts to the current price; maker cannot
-            # create fills without an aggressor. Single placement per action.
+            # Risk-averse quoting is a model assumption, not a forecast.
+            caution = self.maker_cautious()
+            if caution and self.rng.random() < 0.60:
+                self.maker_withheld += 1
+                return
             side: Side = "BUY" if self.rng.getrandbits(1) else "SELL"
-            self._limit(side, qty + 2, agent, seq)
+            if caution:
+                self.maker_widened += 1
+                self._limit(side, min(qty, 2), agent, seq, wide=True)
+            else:
+                self._limit(side, qty + 2, agent, seq)
         elif kind == "NOISE":
             side = "BUY" if self.rng.getrandbits(1) else "SELL"
             if self.rng.random() < 0.72:
@@ -161,6 +189,12 @@ class SyntheticMarket:
                 self._market(side, qty, agent, kind)
             else:
                 self._limit(side, qty, agent, seq)
+
+    def maker_cautious(self) -> bool:
+        within_shock = (self.shock is not None and self.shock['enabled'] and
+                        0 <= self.tick - self.config.shock_tick <= self.config.maker_caution_ticks)
+        thin_book = self.book.depth('BUY', 8) < 12 or self.book.depth('SELL', 8) < 12
+        return within_shock or thin_book
 
     def _ensure_candle(self) -> None:
         if self._candle is None:
@@ -205,6 +239,9 @@ class SyntheticMarket:
         self.price_history.append(self.book.last_trade_ticks)
         if self.tick % self.config.candle_ticks == 0 or self.tick == self.config.ticks:
             self.candles.append(dict(self._candle))
+        self.economy.review_lifecycle(self.book, self.book.last_trade_ticks)
+        if not self.economy.check(self.book):
+            raise AssertionError('ECONOMY_INVARIANT_FAILED')
         if not self.book.check_conservation():
             raise AssertionError("LIMIT_QUANTITY_CONSERVATION_FAILED")
         if not self.economy.check(self.book):
@@ -235,6 +272,9 @@ class SyntheticMarket:
                 "shock": self.shock, "events": list(self.event_log),
                 "recent_trades": self.recent_trades[-20:],
                 "economy": self.economy.snapshot(self.book.last_trade_ticks),
+                "maker_risk": {"cautious": self.maker_cautious(),
+                               "withheld_quotes": self.maker_withheld,
+                               "widened_quotes": self.maker_widened},
                 "conservation_pass": self.book.check_conservation(),
                 "economy_conservation_pass": self.economy.check(self.book)}
 

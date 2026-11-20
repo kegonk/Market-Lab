@@ -115,3 +115,88 @@ and controls for play, pause, step, speed, and parameter reset.
 ### Explicit non-goals for v0.3
 
 No outside data, exchange connectivity, paid models, live orders, real balances, borrowing, margin calls, liquidation, bankruptcies, fees, agent deposit/withdrawal, durable order ledger, or reliable profit forecasting. A negative marked PnL does not imply bankruptcy; future versions may define insolvency rules separately. This isolated research code is **not** the Kairos AGI `PAPER` or `SHADOW` runtime.
+
+---
+
+## v0.4 — Synthetic lifecycle, fees and stress behavior (implemented in feature branch)
+
+**Scope:** Only the local interactive synthetic market (`market_lab.interactive`).
+The original fixed-tape LQ-001 CLI (`python -m market_lab`) remains unchanged.
+Nothing in this release connects to exchanges, Kairos AGI, market data or a live account.
+
+### Accounting rules
+
+- `VCOIN` is a whole-number artificial unit. Prices and virtual cash use **integer ticks of 0.1 VCU**.
+- Separate maker and taker fees default to **10 bps and 20 bps** respectively, adjustable from 0 to 1,000 bps.
+- A fee is assessed **for each filled coin** in integer price ticks:
+  `fee_per_coin_ticks = ceil(price_ticks * fee_bps / 10000)`.
+  It is then multiplied by the filled quantity. **Rounding per coin** means that
+  effective fees can exceed the quoted basis point rate for small prices; this is
+  an intentional simplification, not an exchange-compatible fee engine.
+- Buyer pays price plus own fee, seller receives price minus own fee.
+  Both fee amounts move to **EXCHANGE**, a virtual non-trading account.
+  Trading participants remain 1,002 wallets; EXCHANGE is counted separately.
+- Resting buy orders reserve **price + potential maker fee** for every remaining
+  unit. SELL orders reserve inventory. Partial fills and cancellations release
+  exactly the locked quantity/quote. Aggressive buys are capped by the wallet
+  balance **inclusive of taker fee** and may partially execute.
+- All matched inventory is accounted through **FIFO acquisition lots**. The
+  initial inventory is entered at the initial model mid-price. Buyer fees add
+  to the purchased lot basis, seller fees reduce realized proceeds.
+- `realized_pnl = sale proceeds net of seller fees - FIFO basis sold`;
+  `unrealized_pnl = current mark * owned coins - remaining FIFO basis`.
+  `mark_pnl = current marked equity - initial marked equity`.
+- The sum of participant realized and unrealized PnL equals the sum of their
+  mark PnL; fee-account PnL is excluded from that investor comparison.
+  With EXCHANGE included, total marked PnL equals
+  `initial coins * (current price - initial price)`.
+
+### Lifecycle rules (model assumptions)
+
+- `ACTIVE`: participant may submit a funded order.
+- `STOPPED`: at least `stop_denials` consecutive unfunded attempts (default 6)
+  resulted in an operational stop. Valid funded attempts reset the streak.
+- `BANKRUPT`: marked equity falls to or below a configurable percentage of
+  that participant's initial equity (default 20%). The term describes a
+  **simulation risk stop**, not legal insolvency or a real margin liquidation.
+- Either stop **cancels and refunds any passive orders**, retains the owner's
+  remaining coins/cash, and prevents subsequent new orders. No liquidation,
+  borrowing, debt forgiveness or replenishment of balances occurs.
+- The user-facing winner/loser counts include any marked gains/losses from
+  preexisting inventory, including agents which never traded. Separate count
+  `traded_wallets` tracks those who took part in at least one fill.
+
+### Market-maker stress reaction (explicit behavioral hypothesis)
+
+A MAKER-type agent becomes cautious for the configured window after a
+cancellation shock (default 35 ticks), or while either side of the eight-level
+book has less than 12 units. In this state, 60% of MAKER quote opportunities
+are withheld; the others place smaller orders at an offset of 8–20 price ticks
+instead of 1–7. This is a parameterized hypothesis, **not a model learned
+from real market makers**. Metrics include `withheld_quotes`, `widened_quotes`
+and `cautious`.
+
+### Acceptance contract
+
+1. `python -m unittest discover -s tests -v` passes the old v0.3 tests plus
+   fee, FIFO, stop, shock, invariants and determinism tests.
+2. No external Python packages required; `node --check market_lab/static/app.js`
+   passes if Node is installed.
+3. Repeated same-seed runs match byte-for-byte serialized fingerprints.
+4. At each simulated tick, nonnegative balances/locks hold; coin and cash
+   sums are conserved; EXCHANGE balance equals collected fees; FIFO lot size
+   equals owned inventory; book locks exactly match resting orders.
+5. `/api/state` and the UI clearly show `SIMULATED` and economic diagnostics.
+   Local server binds to `127.0.0.1` only.
+6. No private account API, credentials, external market data, live trading,
+   PAPER bridge, LLM or Kairos AGI imports.
+
+### Remaining limitations
+
+Account state is **in-memory** and resets when the server restarts. There
+is no time-weighted PnL, price impact calibration, leverage/margin, liquidation,
+long-lived database ledger, corporate actions or externally observed data.
+In an unleveraged spot model at default endowments, BANKRUPT can naturally
+remain at zero; the configured threshold and deterministic synthetic crash
+are covered by tests. Neither a clean test run nor visually convincing chart
+supports predictions about real financial markets.
