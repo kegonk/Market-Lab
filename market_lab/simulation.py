@@ -59,6 +59,7 @@ class Execution:
     last_trade_ticks: int | None
     slippage_bps: float | None
     fills: tuple[tuple[int, int], ...]
+    matched_orders: tuple[tuple[str, str, int, int], ...] = ()
 
 
 class OrderBook:
@@ -122,23 +123,33 @@ class OrderBook:
         self.total_cancelled_qty += removed
         return removed
 
-    def execute_market(self, side: Side, qty: int) -> Execution:
+    def execute_market(self, side: Side, qty: int, *, cash_budget_ticks: int | None = None,
+                       exclude_agent: str | None = None) -> Execution:
         if qty <= 0:
             raise ValueError("market order qty must be positive")
         opposite: Side = "SELL" if side == "BUY" else "BUY"
-        best = self.best(opposite)
-        candidates = sorted((o for o in self.orders.values() if o.side == opposite),
+        candidates = sorted((o for o in self.orders.values()
+                             if o.side == opposite and o.agent != exclude_agent),
                             key=lambda o: ((o.price_ticks if side == "BUY" else -o.price_ticks), o.sequence))
+        best = candidates[0].price_ticks if candidates else None
         left = qty
         fills: list[tuple[int, int]] = []
+        matched: list[tuple[str, str, int, int]] = []
+        if cash_budget_ticks is not None and (side != 'BUY' or cash_budget_ticks < 0):
+            raise ValueError('cash budget is only valid for BUY market orders')
         for resting in candidates:
             if left <= 0:
                 break
             take = min(left, resting.remaining)
+            if cash_budget_ticks is not None:
+                take = min(take, cash_budget_ticks // resting.price_ticks)
             if take <= 0:
                 continue
             resting.remaining -= take
             left -= take
+            if cash_budget_ticks is not None:
+                cash_budget_ticks -= take * resting.price_ticks
+            matched.append((resting.order_id, resting.agent, resting.price_ticks, take))
             self.last_trade_ticks = resting.price_ticks
             fills.append((resting.price_ticks, take))
             if resting.remaining == 0:
@@ -151,7 +162,8 @@ class OrderBook:
         if vwap is not None and best is not None:
             slippage = (vwap - best if side == "BUY" else best - vwap) / best * 10_000
         return Execution(side, qty, filled, left, best, vwap,
-                         self.last_trade_ticks if filled else None, slippage, tuple(fills))
+                         self.last_trade_ticks if filled else None, slippage, tuple(fills),
+                         tuple(matched))
 
     def snapshot(self, tick: int) -> dict:
         bid, ask = self.best("BUY"), self.best("SELL")

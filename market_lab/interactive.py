@@ -12,6 +12,7 @@ import json
 import random
 
 from .simulation import Config, Execution, OrderBook, Side
+from .economy import SyntheticEconomy
 
 
 @dataclass(frozen=True)
@@ -26,10 +27,10 @@ class SessionConfig:
     candle_ticks: int = 5
 
     def __post_init__(self) -> None:
-        for field in ("ticks", "shock_tick", "cancel_percent", "sell_qty",
-                      "events_per_tick", "candle_ticks"):
+        for field in ('seed', 'ticks', 'shock_tick', 'cancel_percent', 'sell_qty',
+                      'events_per_tick', 'candle_ticks'):
             if type(getattr(self, field)) is not int:
-                raise ValueError(f"{field} must be an integer")
+                raise ValueError(f'{field} must be an integer')
         if not (20 <= self.ticks <= 2000 and 1 <= self.shock_tick <= self.ticks):
             raise ValueError("ticks must be 20..2000 and shock_tick within ticks")
         if not (0 <= self.cancel_percent <= 100):
@@ -53,6 +54,7 @@ class SyntheticMarket:
         self.book = OrderBook(Config(ticks=max(self.config.ticks, 2),
                                      shock_tick=1, initial_levels=40,
                                      units_per_level=8, agent_count=1000))
+        self.economy = SyntheticEconomy(self.book)
         self.tick = 0
         self.price_history = [self.book.last_trade_ticks]
         self.candles: list[dict] = []
@@ -93,7 +95,12 @@ class SyntheticMarket:
         self.recent_trades = self.recent_trades[-60:]
 
     def _market(self, side: Side, qty: int, agent: str, agent_type: str) -> Execution:
-        e = self.book.execute_market(side, qty)
+        accepted, budget = self.economy.market_budget(agent, side, qty)
+        if accepted == 0:
+            return Execution(side, qty, 0, qty, None, None, None, None, ())
+        e = self.book.execute_market(side, accepted, cash_budget_ticks=budget,
+                                     exclude_agent=agent)
+        self.economy.settle(agent, side, e.matched_orders)
         self._record_execution(e, agent, agent_type)
         return e
 
@@ -111,7 +118,13 @@ class SyntheticMarket:
         if side == "SELL" and bid is not None:
             price = max(price, bid + 1)
         price = max(1, price)
-        self.book.add_limit(f"a-{self.tick}-{seq}-{side}", agent, side, price, qty)
+        if not self.economy.reserve(agent, side, price, qty):
+            return
+        try:
+            self.book.add_limit(f"a-{self.tick}-{seq}-{side}", agent, side, price, qty)
+        except Exception:
+            self.economy.release(agent, side, price, qty)
+            raise
 
     def _act(self, seq: int) -> None:
         agent_id = self.rng.randrange(1000)
@@ -166,7 +179,8 @@ class SyntheticMarket:
         if self.tick == self.config.shock_tick:
             pre_bid = self.book.best("BUY")
             pre_depth = self.book.depth("BUY", 8)
-            removed = (self.book.cancel_top_fraction("BUY", 8, self.config.cancel_percent / 100)
+            removed = (self.economy.cancel_book_top(self.book, "BUY", 8,
+                                                     self.config.cancel_percent / 100)
                        if self.config.shock_enabled else 0)
             after_depth = self.book.depth("BUY", 8)
             e = self._market("SELL", self.config.sell_qty, "STRESS", "STRESS")
@@ -193,6 +207,8 @@ class SyntheticMarket:
             self.candles.append(dict(self._candle))
         if not self.book.check_conservation():
             raise AssertionError("LIMIT_QUANTITY_CONSERVATION_FAILED")
+        if not self.economy.check(self.book):
+            raise AssertionError("ECONOMY_CONSERVATION_FAILED")
         return self.state()
 
     def advance(self, count: int = 1) -> dict:
@@ -218,7 +234,9 @@ class SyntheticMarket:
                 "volume": self.total_traded_qty, "agent_actions": dict(self.agent_actions),
                 "shock": self.shock, "events": list(self.event_log),
                 "recent_trades": self.recent_trades[-20:],
-                "conservation_pass": self.book.check_conservation()}
+                "economy": self.economy.snapshot(self.book.last_trade_ticks),
+                "conservation_pass": self.book.check_conservation(),
+                "economy_conservation_pass": self.economy.check(self.book)}
 
     def fingerprint(self) -> str:
         payload = json.dumps(self.state(), sort_keys=True, separators=(",", ":"),

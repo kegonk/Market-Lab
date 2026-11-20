@@ -99,3 +99,19 @@ and controls for play, pause, step, speed, and parameter reset.
 5. After shock a CANCEL is applied to resting BID volume, followed by one
    aggressive SELL; unfilled quantity is explicit, never invented.
 6. All statuses remain SIMULATED. No real market data or linked Kairos paths.
+
+## v0.3 — Closed synthetic economy (implementation slice)
+
+- `market_lab/economy.py` owns an **in-memory**, zero-credit, zero-fee ledger of 1,000 synthetic agent wallets plus `MAKER` (initial depth) and `STRESS` (the forced sale).
+- Unit accounting uses *integer* quote ticks (one tick = 0.1 VCU) and whole VCOIN. The dashboard converts to displayed VCU only; no floating-point cash mutation occurs.
+- Each wallet has owned cash/coin plus reserved cash/coin supporting resting passive orders. A BUY limit locks `price_ticks × quantity`, a SELL limit locks quantity. Insufficient collateral rejects the order.
+- A market SELL is bounded by free VCOIN; a market BUY is matched only to quantity affordable at each ask level using free VCU. Self-matching is prevented; maker/taker transfers are recorded from matched resting-order identities.
+- Trade settlement updates both counterparties, releases filled maker reservations, and cannot create cash or VCOIN. The liquidity-withdrawal shock returns exact cancelled BID reserves to original agents.
+- Simulation verifies after *each tick* (1) cash total unchanged, (2) coin total unchanged, (3) wallet balances nonnegative, (4) every wallet's locked collateral equals remaining resting orders, and (5) order-book quantity conservation.
+- Leaderboard mark-to-market PnL is `cash + coin × last_trade_price − initial_wealth`; aggregate marked wealth changes when the **price** changes despite conservation of assets. This is a valuation, not realized profit, and is not a source of real trading alpha.
+- UI reports wallet counts, settled fills, rejected attempts, aggregate marked PnL, leaders and laggards. Synthetic cash/coin held by MAKER/STRESS are included in conservation but excluded from individual agent leaderboards.
+- The existing v0.1 paired deterministic tape and v0.2 chart controls remain available. `python -m unittest discover -s tests -v` exercises original tests plus accounting-specific cases.
+
+### Explicit non-goals for v0.3
+
+No outside data, exchange connectivity, paid models, live orders, real balances, borrowing, margin calls, liquidation, bankruptcies, fees, agent deposit/withdrawal, durable order ledger, or reliable profit forecasting. A negative marked PnL does not imply bankruptcy; future versions may define insolvency rules separately. This isolated research code is **not** the Kairos AGI `PAPER` or `SHADOW` runtime.

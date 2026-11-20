@@ -76,6 +76,19 @@ function render() {
  $('tradeFeed').innerHTML=state.recent_trades.length
  ? [...state.recent_trades].reverse().slice(0,18).map(t=>`<div class="trade-row"><span>${t.tick}</span><span class="${t.side==='BUY'?'buy':'sell'}">${t.side}</span><span>${number(t.price,1)}</span><span>${t.qty}</span></div>`).join('')
  : '<div class="empty">Сделки появятся после запуска</div>';
+ const econ=state.economy;
+ if(econ){
+  const safe=state.economy_conservation_pass && state.conservation_pass;
+  $('econPass').textContent=safe?'✓ CONSERVED':'✕ ACCOUNTING ERROR';
+  $('econPass').classList.toggle('fail',!safe);
+  $('accountCount').textContent=econ.wallet_count.toLocaleString('ru-RU');
+  $('settledFills').textContent=econ.fills_settled.toLocaleString('ru-RU');
+  $('deniedActions').textContent=econ.denied_actions.toLocaleString('ru-RU');
+  $('totalPnl').textContent=number(econ.total_mark_pnl_vcu,1)+' VCU';
+  const cards=(people)=>people.map(a=>'<div class="leader-row"><span>'+a.agent+'</span><span>'+number(a.coin_qty,0)+' VCOIN</span><strong class="'+(a.mark_pnl_vcu>=0?'buy':'sell')+'">'+(a.mark_pnl_vcu>=0?'+':'')+number(a.mark_pnl_vcu,1)+'</strong></div>').join('');
+  $('winners').innerHTML=cards(econ.leaders);
+  $('losers').innerHTML=cards(econ.laggards);
+ }
  $('empty').classList.toggle('hide',state.tick>0);
  $('step').disabled=state.done; $('play').disabled=state.done;
  drawCandles();
