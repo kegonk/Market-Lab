@@ -35,6 +35,8 @@ class Member:
     strategy_changes: int = 0
     best_relative_pnl_ticks: int = 0
     last_reviewed_traded_qty: int = 0
+    initial_strategy: str = ''
+    last_strategy_change_tick: int = 0
 
 
 class PopulationEvolution:
@@ -42,7 +44,9 @@ class PopulationEvolution:
 
     def __init__(self, economy: SyntheticEconomy, *, reserve_agents: int = 100,
                  review_every: int = 20, weak_reviews_to_exit: int = 3,
-                 max_joins_per_review: int = 10) -> None:
+                 max_joins_per_review: int = 10,
+                 min_strategy_hold_ticks: int = 0,
+                 adaptation_enabled: bool = True) -> None:
         if not 0 <= reserve_agents <= 500:
             raise ValueError('reserve_agents must be 0..500')
         if not 5 <= review_every <= 500:
@@ -51,6 +55,14 @@ class PopulationEvolution:
             raise ValueError('weak_reviews_to_exit must be 2..20')
         if not 1 <= max_joins_per_review <= 100:
             raise ValueError('max_joins_per_review must be 1..100')
+        if type(min_strategy_hold_ticks) is not int or not 0 <= min_strategy_hold_ticks <= 2000:
+            raise ValueError('min_strategy_hold_ticks must be 0..2000')
+        if type(adaptation_enabled) is not bool:
+            raise ValueError('adaptation_enabled must be boolean')
+        self.min_strategy_hold_ticks = min_strategy_hold_ticks
+        self.adaptation_enabled = adaptation_enabled
+        self.blocked_switches = 0
+        self.switches_by_original_strategy = {s: 0 for s in STRATEGIES}
         self.economy = economy
         self.review_every = review_every
         self.weak_reviews_to_exit = weak_reviews_to_exit
@@ -59,6 +71,11 @@ class PopulationEvolution:
         if reserve_agents > len(agents):
             raise ValueError('reserve_agents exceed available synthetic agents')
         active_ids, waiting_ids = (agents[:-reserve_agents], agents[-reserve_agents:]) if reserve_agents else (agents, [])
+        self.initial_active_ids = frozenset(active_ids)
+        self.initial_cohorts = {s: sum(original_strategy(a) == s for a in active_ids)
+                                for s in STRATEGIES}
+        self.initial_wallets = {a: (economy.wallets[a].cash_ticks,
+                                    economy.wallets[a].coin_qty) for a in agents}
         self.active: dict[str, Member] = {}
         self.waiting = deque(waiting_ids)
         self.retired: dict[str, dict] = {}
@@ -70,15 +87,19 @@ class PopulationEvolution:
         self.positive_reviews = 0
         self.negative_reviews = 0
         self.review_count = 0
+        self.active_agent_tick_exposure = 0
         self._all_ids = set(agents)
         for agent in active_ids:
             self.active[agent] = self._member(agent, 0)
 
     def _member(self, agent_id: str, tick: int) -> Member:
         w = self.economy.wallets[agent_id]
-        return Member(agent_id, original_strategy(agent_id), tick,
+        strategy = original_strategy(agent_id)
+        return Member(agent_id, strategy, tick,
                       w.cash_ticks, w.coin_qty, w.traded_qty,
-                      last_reviewed_traded_qty=w.traded_qty)
+                      last_reviewed_traded_qty=w.traded_qty,
+                      initial_strategy=strategy,
+                      last_strategy_change_tick=tick)
 
     def _log(self, tick: int, kind: str, agent: str, note: str) -> None:
         self.events.append({'tick': tick, 'kind': kind, 'agent': agent, 'note': note})
@@ -142,9 +163,16 @@ class PopulationEvolution:
                 self._exit(agent, tick, price_ticks, book,
                            f'Risk status {self.economy.wallets[agent].status}')
 
+        # Aggregate pre-review active exposure once per simulation tick.
+        # Used to normalize switching frequency as population size declines.
+        self.active_agent_tick_exposure += len(self.active)
         if tick % self.review_every:
             return
         self.review_count += 1
+        # Frozen control keeps identical initial wallets and eligible agents,
+        # but never adaptively switches or replaces agents. Risk stops still apply.
+        if not self.adaptation_enabled:
+            return
         # Peer performance is independently measured before changing rules.
         samples: dict[str, list[int]] = {s: [] for s in STRATEGIES}
         for member in self.active.values():
@@ -172,8 +200,13 @@ class PopulationEvolution:
                 replacement = next((s for s in ranks if s != member.strategy and means[s] != float('-inf')), None)
                 if replacement is None:
                     replacement = STRATEGIES[(STRATEGIES.index(member.strategy) + 1) % len(STRATEGIES)]
+                if tick - member.last_strategy_change_tick < self.min_strategy_hold_ticks:
+                    self.blocked_switches += 1
+                    continue
                 old = member.strategy
                 member.strategy = replacement
+                member.last_strategy_change_tick = tick
+                self.switches_by_original_strategy[member.initial_strategy] += 1
                 member.strategy_changes += 1
                 self.switches += 1
                 self._log(tick, 'SWITCH', agent, f'{old} → {replacement}: relative return below zero')
@@ -198,6 +231,34 @@ class PopulationEvolution:
             return False
         return all(self.economy.can_trade(a) for a in self.active)
 
+    def relative_metrics(self, price_ticks: int) -> dict:
+        """End-of-run cohort-inclusive, after-fee return vs each wallet's HOLD.
+
+        Includes waiting and retired pre-funded participants (no survivor bias).
+        The benchmark holds the original cash and coin quantities at the *same*
+        current modeled price for the given arm, so market appreciation alone
+        cannot make a strategy appear profitable.
+        """
+        scores = []
+        traded = []
+        for agent, (cash0, coins0) in self.initial_wallets.items():
+            wallet = self.economy.wallets[agent]
+            value = wallet.cash_ticks + wallet.coin_qty * price_ticks
+            benchmark = cash0 + coins0 * price_ticks
+            score = value - benchmark
+            scores.append(score)
+            if wallet.traded_qty:
+                traded.append(score)
+        total = sum(scores)
+        return {'all_agents': len(scores),
+                'traded_agents': len(traded),
+                'total_relative_vcu': round(total / 10, 2),
+                'mean_relative_vcu': round(total / (10 * len(scores)), 5),
+                'mean_traded_relative_vcu': round(sum(traded) / (10 * len(traded)), 5) if traded else 0.0,
+                'ahead': sum(x > 0 for x in scores),
+                'behind': sum(x < 0 for x in scores),
+                'equal': sum(x == 0 for x in scores)}
+
     def snapshot(self, price_ticks: int) -> dict:
         counts = {rule: 0 for rule in STRATEGIES}
         positive = negative = even = 0
@@ -210,7 +271,27 @@ class PopulationEvolution:
                 negative += 1
             else:
                 even += 1
+        cohort_survival = {
+            rule: {
+                'initial': self.initial_cohorts[rule],
+                'surviving': sum(a in self.active for a in self.initial_active_ids
+                                 if original_strategy(a) == rule),
+                'survival_percent': round(100 * sum(a in self.active for a in self.initial_active_ids
+                                                    if original_strategy(a) == rule) /
+                                          self.initial_cohorts[rule], 2) if self.initial_cohorts[rule] else None,
+                'switches': self.switches_by_original_strategy[rule],
+            } for rule in STRATEGIES
+        }
         return {'enabled': True, 'active': len(self.active),
+                'adaptation_enabled': self.adaptation_enabled,
+                'min_strategy_hold_ticks': self.min_strategy_hold_ticks,
+                'blocked_switches': self.blocked_switches,
+                'active_agent_tick_exposure': self.active_agent_tick_exposure,
+                'switches_per_1000_agent_ticks': round(
+                    1000 * self.switches / self.active_agent_tick_exposure, 5)
+                    if self.active_agent_tick_exposure else 0.0,
+                'initial_cohort_survival': cohort_survival,
+                'relative_to_hold': self.relative_metrics(price_ticks),
                 'waiting': len(self.waiting), 'ineligible_reserves': len(self.ineligible_reserves),
                 'retired': self.exits,
                 'admitted': self.joins, 'strategy_switches': self.switches,

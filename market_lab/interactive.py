@@ -36,13 +36,15 @@ class SessionConfig:
     evolution_review_ticks: int = 20
     weak_reviews_to_exit: int = 3
     max_joins_per_review: int = 10
+    adaptation_enabled: bool = True
+    min_strategy_hold_ticks: int = 40
 
     def __post_init__(self) -> None:
         for field in ('seed', 'ticks', 'shock_tick', 'cancel_percent', 'sell_qty',
                       'events_per_tick', 'candle_ticks', 'maker_fee_bps', 'taker_fee_bps',
                       'bankruptcy_threshold_percent', 'stop_denials', 'maker_caution_ticks',
                       'waiting_agents', 'evolution_review_ticks', 'weak_reviews_to_exit',
-                      'max_joins_per_review'):
+                      'max_joins_per_review', 'min_strategy_hold_ticks'):
             if type(getattr(self, field)) is not int:
                 raise ValueError(f'{field} must be an integer')
         if not (20 <= self.ticks <= 2000 and 1 <= self.shock_tick <= self.ticks):
@@ -63,6 +65,10 @@ class SessionConfig:
                 and 2 <= self.weak_reviews_to_exit <= 20
                 and 1 <= self.max_joins_per_review <= 100):
             raise ValueError('invalid evolution parameters')
+        if not 0 <= self.min_strategy_hold_ticks <= 2000:
+            raise ValueError('min_strategy_hold_ticks must be 0..2000')
+        if type(self.adaptation_enabled) is not bool:
+            raise ValueError('adaptation_enabled must be boolean')
         if type(self.evolution_enabled) is not bool:
             raise ValueError('evolution_enabled must be boolean')
         if not isinstance(self.shock_enabled, bool):
@@ -89,7 +95,9 @@ class SyntheticMarket:
             self.economy, reserve_agents=self.config.waiting_agents,
             review_every=self.config.evolution_review_ticks,
             weak_reviews_to_exit=self.config.weak_reviews_to_exit,
-            max_joins_per_review=self.config.max_joins_per_review)
+            max_joins_per_review=self.config.max_joins_per_review,
+            min_strategy_hold_ticks=self.config.min_strategy_hold_ticks,
+            adaptation_enabled=self.config.adaptation_enabled)
             if self.config.evolution_enabled else None)
         self.maker_withheld = 0
         self.maker_widened = 0
@@ -231,9 +239,9 @@ class SyntheticMarket:
             self._candle = {"start": self.tick, "open": px, "high": px,
                             "low": px, "close": px, "volume": 0, "trades": 0}
 
-    def step(self) -> dict:
+    def step(self, *, capture_state: bool = True) -> dict | None:
         if self.tick >= self.config.ticks:
-            return self.state()
+            return self.state() if capture_state else None
         self.tick += 1
         if (self.tick - 1) % self.config.candle_ticks == 0:
             self._candle = None
@@ -277,7 +285,7 @@ class SyntheticMarket:
             raise AssertionError("LIMIT_QUANTITY_CONSERVATION_FAILED")
         if not self.economy.check(self.book):
             raise AssertionError("ECONOMY_CONSERVATION_FAILED")
-        return self.state()
+        return self.state() if capture_state else None
 
     def advance(self, count: int = 1) -> dict:
         if type(count) is not int or not (1 <= count <= 100):
