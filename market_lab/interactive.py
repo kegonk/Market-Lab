@@ -12,7 +12,7 @@ import json
 import random
 
 from .simulation import Config, Execution, OrderBook, Side
-from .economy import SyntheticEconomy
+from .economy import SyntheticEconomy, fee_unit
 from .population import PopulationEvolution
 
 
@@ -44,13 +44,17 @@ class SessionConfig:
     allow_retired_reentry: bool = False
     reentry_cooldown_ticks: int = 40
     synthetic_regime: str = 'LEGACY'
+    # v1.0 opt-in liquidity provision by existing, funded active wallets.
+    quote_refresh_mode: str = 'OFF'  # OFF, MAKER_ONLY, ALL_FUNDED
+    quote_refresh_min_depth: int = 5
 
     def __post_init__(self) -> None:
         for field in ('seed', 'ticks', 'shock_tick', 'cancel_percent', 'sell_qty',
                       'events_per_tick', 'candle_ticks', 'maker_fee_bps', 'taker_fee_bps',
                       'bankruptcy_threshold_percent', 'stop_denials', 'maker_caution_ticks',
                       'waiting_agents', 'evolution_review_ticks', 'weak_reviews_to_exit',
-                      'max_joins_per_review', 'min_strategy_hold_ticks', 'reentry_cooldown_ticks'):
+                      'max_joins_per_review', 'min_strategy_hold_ticks', 'reentry_cooldown_ticks',
+                      'quote_refresh_min_depth'):
             if type(getattr(self, field)) is not int:
                 raise ValueError(f'{field} must be an integer')
         if not (20 <= self.ticks <= 2000 and 1 <= self.shock_tick <= self.ticks):
@@ -75,6 +79,10 @@ class SessionConfig:
             raise ValueError('invalid reentry_cooldown_ticks')
         if self.synthetic_regime not in ('LEGACY', 'BULL', 'BEAR', 'SIDEWAYS', 'THIN') or type(self.synthetic_regime) is not str:
             raise ValueError('invalid synthetic_regime')
+        if type(self.quote_refresh_mode) is not str or self.quote_refresh_mode not in ('OFF', 'MAKER_ONLY', 'ALL_FUNDED'):
+            raise ValueError('invalid quote_refresh_mode')
+        if not 1 <= self.quote_refresh_min_depth <= 50:
+            raise ValueError('invalid quote_refresh_min_depth')
         if not 0 <= self.min_strategy_hold_ticks <= 2000:
             raise ValueError('min_strategy_hold_ticks must be 0..2000')
         if any(type(v) is not bool for v in (self.allow_strategy_switch,
@@ -87,6 +95,8 @@ class SessionConfig:
             raise ValueError('evolution_enabled must be boolean')
         if not isinstance(self.shock_enabled, bool):
             raise ValueError("shock_enabled must be boolean")
+        if self.quote_refresh_mode != 'OFF' and not self.evolution_enabled:
+            raise ValueError('quote_refresh_mode requires evolution_enabled')
         if not isinstance(self.seed, int) or isinstance(self.seed, bool) or abs(self.seed) > 2**31:
             raise ValueError("seed must be an integer <= 2^31")
 
@@ -128,6 +138,10 @@ class SyntheticMarket:
         self.trades = 0
         self.total_traded_qty = 0
         self.regime_cancelled_qty = 0
+        self.refresh_attempts = {'BUY': 0, 'SELL': 0}
+        self.refresh_posted = {'BUY': 0, 'SELL': 0}
+        self.refresh_quantity = {'BUY': 0, 'SELL': 0}
+        self.refresh_no_eligible = {'BUY': 0, 'SELL': 0}
         self.agent_actions = {"NOISE": 0, "MAKER": 0, "TREND": 0, "REVERSION": 0}
         self.shock: dict | None = None
         self._candle: dict | None = None
@@ -265,6 +279,76 @@ class SyntheticMarket:
             return 'BUY' if self.book.last_trade_ticks < self.book.config.mid_ticks else 'SELL'
         return side
 
+    def _quote_price(self, side: Side) -> int:
+        """Passive price near last synthetic trade, never crosses the opposite side."""
+        center = max(5, self.book.last_trade_ticks)
+        price = max(1, center - 2) if side == 'BUY' else center + 2
+        opposite = self.book.best('SELL' if side == 'BUY' else 'BUY')
+        if opposite is not None:
+            price = min(price, opposite - 1) if side == 'BUY' else max(price, opposite + 1)
+        return max(1, price)
+
+    def _refresh_quotes(self) -> None:
+        """At most one real, fully reserved passive order on each thin side per tick.
+
+        This is an explicitly opt-in behavioural policy of already active wallets.
+        No privileged maker liquidity, gifts, debt, synthetic counterparties,
+        transfer of assets, or replayed stopped accounts. No RNG draws: paired
+        trajectories retain their original random-event stream until divergence.
+        """
+        mode = self.config.quote_refresh_mode
+        if mode == 'OFF':
+            return
+        if self.population is None:
+            raise AssertionError('QUOTE_REFRESH_REQUIRES_POPULATION')
+        for side in ('BUY', 'SELL'):
+            depth = self.book.depth(side, 8)
+            need = self.config.quote_refresh_min_depth - depth
+            if need <= 0:
+                continue
+            self.refresh_attempts[side] += 1
+            price = self._quote_price(side)
+            opposite = self.book.best('SELL' if side == 'BUY' else 'BUY')
+            if opposite is not None and ((side == 'BUY' and price >= opposite) or
+                                         (side == 'SELL' and price <= opposite)):
+                self.refresh_no_eligible[side] += 1
+                continue
+            if mode == 'MAKER_ONLY':
+                candidates = [a for a, m in self.population.active.items()
+                              if m.strategy == 'MAKER']
+            else:
+                candidates = list(self.population.active)
+            candidates.sort()
+            if candidates:
+                offset = (self.tick + (0 if side == 'BUY' else 97)) % len(candidates)
+                candidates = candidates[offset:] + candidates[:offset]
+            for agent in candidates:
+                wallet = self.economy.wallets[agent]
+                if not self.economy.can_trade(agent):
+                    continue
+                if side == 'BUY':
+                    unit_cost = price + fee_unit(price, self.economy.maker_fee_bps)
+                    maximum = wallet.free_cash // unit_cost
+                else:
+                    maximum = wallet.free_coin
+                qty = min(3, need, maximum)
+                if qty < 1:
+                    continue
+                # Never trigger reserve denials on insufficient inventory. They
+                # are NOT free risk-stops and should not alter legacy policy.
+                if not self.economy.reserve(agent, side, price, qty):
+                    raise AssertionError('REFRESH_FUNDED_RESERVATION_FAILED')
+                try:
+                    self.book.add_limit(f'q-{self.tick}-{side}-{agent}',agent,side,price,qty)
+                except Exception:
+                    self.economy.release(agent, side, price, qty)
+                    raise
+                self.refresh_posted[side] += 1
+                self.refresh_quantity[side] += qty
+                break
+            else:
+                self.refresh_no_eligible[side] += 1
+
     def maker_cautious(self) -> bool:
         within_shock = (self.shock is not None and self.shock['enabled'] and
                         0 <= self.tick - self.config.shock_tick <= self.config.maker_caution_ticks)
@@ -322,6 +406,7 @@ class SyntheticMarket:
         self.economy.review_lifecycle(self.book, self.book.last_trade_ticks)
         if self.population:
             self.population.review(self.tick, self.book.last_trade_ticks, self.book)
+            self._refresh_quotes()
             if not self.population.check():
                 raise AssertionError('POPULATION_INVARIANT_FAILED')
         if not self.economy.check(self.book):

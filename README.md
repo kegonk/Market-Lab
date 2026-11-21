@@ -274,3 +274,20 @@ python -m market_lab --seed 42 --ticks 150 --shock-tick 80 \
 Независимый исследовательский модуль `market_lab.research_v09`: диагностика рынков каждые 20 тиков, безопасное повторное вступление **сохранивших собственные виртуальные средства** трейдеров, сравнение с/без ротации участников, четыре полностью синтетических режима генерации заявок, заранее закреплённые показатели активности и ликвидности, SHA-256-checkpoints и возобновление прерванного запуска. По умолчанию механизм повторного допуска **выключен**, прежние v0.7/v0.8 запускаются без него. Всё только офлайн; никаких подключений к Kairos AGI или реальным биржам.
 
 Подробное описание и команды: [docs/RESEARCH_V09.md](docs/RESEARCH_V09.md).
+
+## v1.0 — Liquidity & Population Dynamics (independent synthetic laboratory)
+
+New **opt-in** `quote_refresh_mode=OFF|MAKER_ONLY|ALL_FUNDED` places at most one fully funded, passive BUY and SELL quote per tick when the top-eight-level side depth is too small. Existing active wallet reservations and integer fee accounting are mandatory; the default is `OFF` and v0.9 behavior is unchanged. No virtual coins, cash, debt, or wallets are created, and risk-stopped agents remain stopped.
+
+The new `market_lab.research_v10` research command exports *every-tick* BID/ASK presence, depth, spread coverage, nonzero trade ticks, stock-out indicators for funded MAKER wallets, cancellations, quote-withholding, refill success and cost, plus 20-tick windows. Ten predeclared scenarios isolate population entry/exit policies, maker-only vs all-funded passive replenishment and four artificial market regimes. Predeclared viability thresholds, seed-level confidence intervals, independently hashed checkpoints, `status` and `--resume` are included. Full experiment defaults to new synthetic seeds `301:310`, horizons `320,1280`, and **400 total arms**.
+
+```powershell
+py -3.12 -m market_lab.research_v10 plan --seeds 301:310 --horizons 320,1280 --profile full --output artifacts/research-v10/plan-001.json
+py -3.12 -m market_lab.research_v10 run --plan artifacts/research-v10/plan-001.json --output artifacts/research-v10/results-001
+# In a second terminal:
+py -3.12 -m market_lab.research_v10 status --plan artifacts/research-v10/plan-001.json --output artifacts/research-v10/results-001
+# Only if interrupted, restart with the existing directory:
+py -3.12 -m market_lab.research_v10 run --plan artifacts/research-v10/plan-001.json --output artifacts/research-v10/results-001 --resume
+```
+
+Detailed methodology, caveats and all 10 scenarios: [docs/RESEARCH_V10.md](docs/RESEARCH_V10.md). Still **SIMULATED ONLY**, and independent of Kairos AGI or real trading infrastructure.
