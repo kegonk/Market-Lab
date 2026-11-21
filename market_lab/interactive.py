@@ -47,6 +47,14 @@ class SessionConfig:
     # v1.0 opt-in liquidity provision by existing, funded active wallets.
     quote_refresh_mode: str = 'OFF'  # OFF, MAKER_ONLY, ALL_FUNDED
     quote_refresh_min_depth: int = 5
+    # v1.1: separate, opt-in synthetic inventory-backed liquidity controller.
+    liquidity_v11_mode: str = 'OFF'  # OFF, SYMMETRIC, SIDE_AWARE
+    liquidity_v11_bid_target: int = 5
+    liquidity_v11_ask_target: int = 5
+    liquidity_v11_max_order_qty: int = 3
+    liquidity_v11_max_orders_per_side_tick: int = 2
+    liquidity_v11_wallet_cap_percent: int = 20
+    liquidity_v11_max_orders_per_agent: int = 3
 
     def __post_init__(self) -> None:
         for field in ('seed', 'ticks', 'shock_tick', 'cancel_percent', 'sell_qty',
@@ -54,7 +62,10 @@ class SessionConfig:
                       'bankruptcy_threshold_percent', 'stop_denials', 'maker_caution_ticks',
                       'waiting_agents', 'evolution_review_ticks', 'weak_reviews_to_exit',
                       'max_joins_per_review', 'min_strategy_hold_ticks', 'reentry_cooldown_ticks',
-                      'quote_refresh_min_depth'):
+                      'quote_refresh_min_depth',
+                      'liquidity_v11_bid_target', 'liquidity_v11_ask_target',
+                      'liquidity_v11_max_order_qty', 'liquidity_v11_max_orders_per_side_tick',
+                      'liquidity_v11_wallet_cap_percent','liquidity_v11_max_orders_per_agent'):
             if type(getattr(self, field)) is not int:
                 raise ValueError(f'{field} must be an integer')
         if not (20 <= self.ticks <= 2000 and 1 <= self.shock_tick <= self.ticks):
@@ -83,6 +94,19 @@ class SessionConfig:
             raise ValueError('invalid quote_refresh_mode')
         if not 1 <= self.quote_refresh_min_depth <= 50:
             raise ValueError('invalid quote_refresh_min_depth')
+        if type(self.liquidity_v11_mode) is not str or self.liquidity_v11_mode not in ('OFF','SYMMETRIC','SIDE_AWARE'):
+            raise ValueError('INVALID_V11_CONTROL_MODE')
+        if not (1 <= self.liquidity_v11_bid_target <= 50 and
+                1 <= self.liquidity_v11_ask_target <= 50 and
+                1 <= self.liquidity_v11_max_order_qty <= 20 and
+                1 <= self.liquidity_v11_max_orders_per_side_tick <= 5 and
+                1 <= self.liquidity_v11_wallet_cap_percent <= 100 and
+                1 <= self.liquidity_v11_max_orders_per_agent <= 10):
+            raise ValueError('INVALID_V11_RISK_AND_SIDE_LIMITS')
+        if self.liquidity_v11_mode != 'OFF' and not self.evolution_enabled:
+            raise ValueError('V11_CONTROL_REQUIRES_EVOLUTION')
+        if self.liquidity_v11_mode != 'OFF' and self.quote_refresh_mode != 'OFF':
+            raise ValueError('V11_CONTROL_CANNOT_COMBINE_WITH_V10_REFRESH')
         if not 0 <= self.min_strategy_hold_ticks <= 2000:
             raise ValueError('min_strategy_hold_ticks must be 0..2000')
         if any(type(v) is not bool for v in (self.allow_strategy_switch,
@@ -138,6 +162,10 @@ class SyntheticMarket:
         self.trades = 0
         self.total_traded_qty = 0
         self.regime_cancelled_qty = 0
+        self.liquidity_v11 = None
+        if self.config.liquidity_v11_mode != 'OFF':
+            from .liquidity_v11 import AdaptiveLiquidityController
+            self.liquidity_v11 = AdaptiveLiquidityController(self)
         self.refresh_attempts = {'BUY': 0, 'SELL': 0}
         self.refresh_posted = {'BUY': 0, 'SELL': 0}
         self.refresh_quantity = {'BUY': 0, 'SELL': 0}
@@ -155,6 +183,8 @@ class SyntheticMarket:
         self.event_log = self.event_log[-48:]
 
     def _record_execution(self, e: Execution, agent: str, agent_type: str) -> None:
+        if self.liquidity_v11 is not None:
+            self.liquidity_v11.observe_fills(e.matched_orders, self.tick)
         if not e.filled_qty:
             return
         for price, qty in e.fills:
@@ -407,6 +437,8 @@ class SyntheticMarket:
         if self.population:
             self.population.review(self.tick, self.book.last_trade_ticks, self.book)
             self._refresh_quotes()
+            if self.liquidity_v11 is not None:
+                self.liquidity_v11.step()
             if not self.population.check():
                 raise AssertionError('POPULATION_INVARIANT_FAILED')
         if not self.economy.check(self.book):
