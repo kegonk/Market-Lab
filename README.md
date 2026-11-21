@@ -1,6 +1,6 @@
 # Kairos Market Lab
 
-**Standalone, public, fully synthetic market simulator — v0.7 ablation research + v0.6 paired research + v0.5 population evolution + v0.4 fees/FIFO/lifecycle + v0.3 wallets + v0.2 interactive UI + v0.1 LQ-001.** No connection to Kairos AGI runtime, exchanges, real money, real market data, external AI APIs or credentials.
+**Standalone, public, fully synthetic market simulator — v0.8 holdout/continuation research + v0.7 ablation research + v0.6 paired research + v0.5 population evolution + v0.4 fees/FIFO/lifecycle + v0.3 wallets + v0.2 interactive UI + v0.1 LQ-001.** No connection to Kairos AGI runtime, exchanges, real money, real market data, external AI APIs or credentials.
 
 ## О проекте
 
@@ -9,6 +9,21 @@
 **Первый воспроизводимый эксперимент — LQ-001: sudden bid-liquidity withdrawal.** Мы запускаем два искусственных рынка на **одной и той же ленте событий**. В контрольном случае продажи исполняются по исходной ликвидности; в экспериментальном случае непосредственно перед одинаковой агрессивной продажей отменяем 85% заявленного BUY-объёма на восьми верхних ценовых уровнях. Затем сравниваем VWAP, проскальзывание, исполненный объём и глубину стакана.
 
 Все участники, инструменты (`VCOIN/VCU`), балансы и котировки синтетические. Результат не является прогнозом настоящего рынка.
+
+## v0.8 — независимая проверка и возобновляемые исследования
+
+Новая автономная исследовательская ветка (`market_lab.research_v08`) не изменяет интерфейс симулятора и предыдущие эксперименты. Фиксирует ранее не использованные seed `101:120`, горизонты `320,640,1280` и сравнивает адаптивную популяцию с замороженной. **Все данные виртуальные**. Программа пишет атомарные SHA-256-checkpoint после каждого завершённого запуска и отображает прогресс; после прерывания `--resume` продолжает только незавершённые запуски. Результаты включают когорты, описательную динамику каждого первого изменения стратегии и отдельные упрощённые *shadow* правила на одинаковой искусственной ценовой ленте (это **не** исполнения в исходном стакане).
+
+```powershell
+py -3.12 -m market_lab.research_v08 plan --seeds 101:120 --horizons 320,640,1280 --output artifacts/research-v08/plan-001.json
+py -3.12 -m market_lab.research_v08 run --plan artifacts/research-v08/plan-001.json --output artifacts/research-v08/results-001
+# Во втором терминале: только посмотреть прогресс
+py -3.12 -m market_lab.research_v08 status --plan artifacts/research-v08/plan-001.json --output artifacts/research-v08/results-001
+# При прерывании: та же папка и фиксированный план
+py -3.12 -m market_lab.research_v08 run --plan artifacts/research-v08/plan-001.json --output artifacts/research-v08/results-001 --resume
+```
+
+Полный протокол и ограничения интерпретации: [docs/RESEARCH_V08.md](docs/RESEARCH_V08.md). Результаты синтетической модели не относятся к реальным активам и не являются торговыми сигналами.
 
 ## v0.7 — причинные проверки механики эволюции (экспериментальные)
 
