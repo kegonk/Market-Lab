@@ -46,7 +46,9 @@ class PopulationEvolution:
                  review_every: int = 20, weak_reviews_to_exit: int = 3,
                  max_joins_per_review: int = 10,
                  min_strategy_hold_ticks: int = 0,
-                 adaptation_enabled: bool = True) -> None:
+                 adaptation_enabled: bool = True,
+                 allow_switch: bool = True, allow_exit: bool = True,
+                 allow_join: bool = True) -> None:
         if not 0 <= reserve_agents <= 500:
             raise ValueError('reserve_agents must be 0..500')
         if not 5 <= review_every <= 500:
@@ -59,6 +61,11 @@ class PopulationEvolution:
             raise ValueError('min_strategy_hold_ticks must be 0..2000')
         if type(adaptation_enabled) is not bool:
             raise ValueError('adaptation_enabled must be boolean')
+        if any(type(v) is not bool for v in (allow_switch, allow_exit, allow_join)):
+            raise ValueError('ablation controls must be booleans')
+        self.allow_switch = allow_switch
+        self.allow_exit = allow_exit
+        self.allow_join = allow_join
         self.min_strategy_hold_ticks = min_strategy_hold_ticks
         self.adaptation_enabled = adaptation_enabled
         self.blocked_switches = 0
@@ -194,8 +201,10 @@ class PopulationEvolution:
             if score < 0:
                 self.negative_reviews += 1
                 member.weak_reviews += 1
-                if member.weak_reviews >= self.weak_reviews_to_exit:
+                if self.allow_exit and member.weak_reviews >= self.weak_reviews_to_exit:
                     self._exit(agent, tick, price_ticks, book, 'Sustained underperformance vs passive holdings')
+                    continue
+                if not self.allow_switch:
                     continue
                 replacement = next((s for s in ranks if s != member.strategy and means[s] != float('-inf')), None)
                 if replacement is None:
@@ -213,7 +222,8 @@ class PopulationEvolution:
             elif score > 0:
                 self.positive_reviews += 1
                 member.weak_reviews = 0
-        self._admit_replacements(tick)
+        if self.allow_join:
+            self._admit_replacements(tick)
 
     def check(self) -> bool:
         active, waiting, retired = set(self.active), set(self.waiting), set(self.retired)
@@ -250,7 +260,17 @@ class PopulationEvolution:
             if wallet.traded_qty:
                 traded.append(score)
         total = sum(scores)
+        ordered = sorted(scores)
+        def quantile(fraction: float) -> float:
+            at = (len(ordered) - 1) * fraction
+            lo = int(at)
+            hi = min(lo + 1, len(ordered) - 1)
+            return round((ordered[lo] * (hi - at) + ordered[hi] * (at - lo)) / 10, 5)
         return {'all_agents': len(scores),
+                'median_relative_vcu': quantile(0.5),
+                'p10_relative_vcu': quantile(0.1),
+                'p90_relative_vcu': quantile(0.9),
+                'ahead_percent': round(100 * sum(x > 0 for x in scores) / len(scores), 5),
                 'traded_agents': len(traded),
                 'total_relative_vcu': round(total / 10, 2),
                 'mean_relative_vcu': round(total / (10 * len(scores)), 5),
@@ -283,6 +303,8 @@ class PopulationEvolution:
             } for rule in STRATEGIES
         }
         return {'enabled': True, 'active': len(self.active),
+                'allow_switch': self.allow_switch, 'allow_exit': self.allow_exit,
+                'allow_join': self.allow_join,
                 'adaptation_enabled': self.adaptation_enabled,
                 'min_strategy_hold_ticks': self.min_strategy_hold_ticks,
                 'blocked_switches': self.blocked_switches,

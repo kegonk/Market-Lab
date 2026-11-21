@@ -36,6 +36,9 @@ function settings() {
  cfg.shock_enabled=$('shockEnabled').checked;
  cfg.evolution_enabled=$('evolutionEnabled').checked;
  cfg.adaptation_enabled=$('adaptationEnabled').checked;
+ cfg.allow_strategy_switch=$('allowStrategySwitch').checked;
+ cfg.allow_population_exit=$('allowPopulationExit').checked;
+ cfg.allow_population_join=$('allowPopulationJoin').checked;
  return cfg;
 }
 async function reset() {
@@ -112,6 +115,10 @@ function render() {
   $('populationBlocked').textContent=population.blocked_switches;
   $('populationSwitchRate').textContent=number(population.switches_per_1000_agent_ticks,2);
   $('populationControl').textContent=population.adaptation_enabled?'АДАПТИВНЫЙ':'ЗАМОРОЖЕННЫЙ';
+  $('populationMedian').textContent=number(population.relative_to_hold.median_relative_vcu,1)+' VCU';
+  $('populationP10').textContent=number(population.relative_to_hold.p10_relative_vcu,1)+' VCU';
+  $('populationP90').textContent=number(population.relative_to_hold.p90_relative_vcu,1)+' VCU';
+  $('populationAheadPercent').textContent=number(population.relative_to_hold.ahead_percent,1)+'%';
   $('populationCohorts').replaceChildren();
   for(const [name,cohort] of Object.entries(population.initial_cohort_survival)){
     const div=document.createElement('div');div.className='trade-row';
@@ -139,7 +146,7 @@ function render() {
   }
   if(!entries.length){const div=document.createElement('div');div.className='empty';div.textContent='Ожидание первого события популяции';$('populationEvents').appendChild(div);}
  }else{
-  for(const id of ['populationActive','populationWaiting','populationRetired','populationJoined','populationSwitches','populationCompared','populationReviews','populationInvariant','populationRelative','populationAllCompared','populationBlocked','populationControl','populationSwitchRate'])$(id).textContent='—';
+  for(const id of ['populationActive','populationWaiting','populationRetired','populationJoined','populationSwitches','populationCompared','populationReviews','populationInvariant','populationRelative','populationAllCompared','populationBlocked','populationControl','populationSwitchRate','populationMedian','populationP10','populationP90','populationAheadPercent'])$(id).textContent='—';
   $('populationEvents').textContent='Эволюция отключена';
   $('populationRules').replaceChildren();
   $('populationCohorts').replaceChildren();

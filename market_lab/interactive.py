@@ -38,6 +38,9 @@ class SessionConfig:
     max_joins_per_review: int = 10
     adaptation_enabled: bool = True
     min_strategy_hold_ticks: int = 40
+    allow_strategy_switch: bool = True
+    allow_population_exit: bool = True
+    allow_population_join: bool = True
 
     def __post_init__(self) -> None:
         for field in ('seed', 'ticks', 'shock_tick', 'cancel_percent', 'sell_qty',
@@ -67,6 +70,9 @@ class SessionConfig:
             raise ValueError('invalid evolution parameters')
         if not 0 <= self.min_strategy_hold_ticks <= 2000:
             raise ValueError('min_strategy_hold_ticks must be 0..2000')
+        if any(type(v) is not bool for v in (self.allow_strategy_switch,
+                self.allow_population_exit, self.allow_population_join)):
+            raise ValueError('ablation flags must be booleans')
         if type(self.adaptation_enabled) is not bool:
             raise ValueError('adaptation_enabled must be boolean')
         if type(self.evolution_enabled) is not bool:
@@ -97,7 +103,10 @@ class SyntheticMarket:
             weak_reviews_to_exit=self.config.weak_reviews_to_exit,
             max_joins_per_review=self.config.max_joins_per_review,
             min_strategy_hold_ticks=self.config.min_strategy_hold_ticks,
-            adaptation_enabled=self.config.adaptation_enabled)
+            adaptation_enabled=self.config.adaptation_enabled,
+            allow_switch=self.config.allow_strategy_switch,
+            allow_exit=self.config.allow_population_exit,
+            allow_join=self.config.allow_population_join)
             if self.config.evolution_enabled else None)
         self.maker_withheld = 0
         self.maker_widened = 0

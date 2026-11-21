@@ -5,7 +5,7 @@
 <div class="shell">
 <header class="header">
  <div class="brand"><div class="mark"><span></span><span></span><span></span></div><div><div class="eyebrow">AUTONOMOUS RESEARCH SYSTEM</div><h1>MARKET <em>LAB</em></h1></div></div>
- <div class="head-right"><span class="chip synthetic">● SIMULATED</span><span class="chip outline">VCOIN / VCU</span><span class="chip version">v0.6</span></div>
+ <div class="head-right"><span class="chip synthetic">● SIMULATED</span><span class="chip outline">VCOIN / VCU</span><span class="chip version">v0.7</span></div>
 </header>
 <div class="notice"><span class="notice-dot"></span> Полностью искусственный рынок. Никаких реальных котировок, денег, биржевых подключений или торговых сигналов.</div>
 <div class="metrics">
@@ -28,7 +28,7 @@
 <div class="settings-grid"><label>Случайный seed <input id="seed" type="number" value="42" min="-2147483648" max="2147483648"></label><label>Тиков в запуске <input id="ticks" type="number" value="320" min="20" max="2000"></label><label>Шок на тике <input id="shockTick" type="number" value="160" min="1"></label><label>Отмена BUY, % <input id="cancelPercent" type="number" value="85" min="0" max="100"></label><label>Размер агрессивной продажи <input id="sellQty" type="number" value="26" min="1" max="500"></label><label>Действий агентов / тик <input id="eventsPerTick" type="number" value="6" min="1" max="25"></label></div>
 <div class="settings-grid"><label>Maker комиссия, bps <input id="makerFee" type="number" value="10" min="0" max="1000"></label><label>Taker комиссия, bps <input id="takerFee" type="number" value="20" min="0" max="1000"></label><label>Стоп по капиталу, % <input id="bankruptcyThreshold" type="number" value="20" min="0" max="100"></label><label>Отказов до остановки <input id="stopDenials" type="number" value="6" min="1" max="100"></label><label>Осторожность MM, тиков <input id="makerCautionTicks" type="number" value="35" min="0" max="2000"></label></div>
 <label class="toggle"><input type="checkbox" id="shockEnabled" checked><span class="track"></span><span>Убрать покупательскую ликвидность перед продажей</span></label>
-<div class="divider"></div><div class="pane-overline">POPULATION EVOLUTION · v0.6</div>
+<div class="divider"></div><div class="pane-overline">POPULATION EVOLUTION · v0.7</div>
 <div class="settings-grid"><label>Агентов в резерве <input id="waitingAgents" type="number" value="100" min="0" max="500"></label>
 <label>Пересмотр каждые, тиков <input id="evolutionReviewTicks" type="number" value="20" min="5" max="500"></label>
 <label>Слабых проверок до ухода <input id="weakReviewsToExit" type="number" value="3" min="2" max="20"></label>
@@ -36,11 +36,15 @@
 <label>Минимум удержания стратегии, тиков <input id="minStrategyHoldTicks" type="number" value="40" min="0" max="2000"></label></div>
 <label class="toggle"><input type="checkbox" id="evolutionEnabled"><span class="track"></span><span>Включить популяцию трейдеров</span></label>
 <label class="toggle"><input type="checkbox" id="adaptationEnabled" checked><span class="track"></span><span>Разрешить адаптацию (снять для контрольного рынка)</span></label>
+<div class="pane-overline">ABLATION CONTROLS · v0.7</div>
+<label class="toggle"><input type="checkbox" id="allowStrategySwitch" checked><span class="track"></span><span>Разрешить смену стратегий</span></label>
+<label class="toggle"><input type="checkbox" id="allowPopulationExit" checked><span class="track"></span><span>Разрешить уход участников</span></label>
+<label class="toggle"><input type="checkbox" id="allowPopulationJoin" checked><span class="track"></span><span>Разрешить приход новичков (при наличии вакансий)</span></label>
 <button class="button apply" id="apply">Применить и начать заново</button><div class="settings-help" id="error" role="alert"></div><p class="footnote">Изменение параметров создаёт новый эксперимент. Одинаковые seed и настройки воспроизводят одинаковые события; после шока агенты реагируют на новые цены.</p></section>
 <section class="pane activity-pane"><div class="pane-heading"><div><div class="pane-overline">AGENT BEHAVIOR</div><h2>Активность трейдеров</h2></div><span class="chip small">1 000 ID</span></div>
 <div id="agents" class="agents"></div><p class="footnote">NOISE — случайные; MAKER — добавляют лимитные заявки; TREND — следуют за движением; REVERSION — действуют против тренда. Агенты используют виртуальные балансы и не могут тратить незарезервированные средства сверх остатка.</p>
 <div class="divider"></div><div class="pane-overline">SHOCK OBSERVATION</div><div id="shockReport" class="shock-report">Событие ещё не произошло · тик <span id="scheduled">160</span></div></section>
-<section class="pane population-pane"><div class="pane-heading"><div><div class="pane-overline">PRE-FUNDED AGENT POPULATION · v0.6</div><h2>Эволюция участников</h2></div><span class="chip small">SIMULATED ONLY</span></div>
+<section class="pane population-pane"><div class="pane-heading"><div><div class="pane-overline">PRE-FUNDED AGENT POPULATION · v0.7</div><h2>Эволюция участников</h2></div><span class="chip small">SIMULATED ONLY</span></div>
 <div class="economy-stats"><div><span>АКТИВНЫЕ АГЕНТЫ</span><strong id="populationActive">—</strong></div>
 <div><span>РЕЗЕРВ / ОЖИДАЮТ</span><strong id="populationWaiting">—</strong></div>
 <div><span>УШЛИ С РЫНКА</span><strong id="populationRetired">—</strong></div>
@@ -54,9 +58,11 @@
 <div><span>ЗАПРЕЩЕНО СМЕН (MIN HOLD)</span><strong id="populationBlocked">—</strong></div>
 <div><span>СМЕН / 1000 АГЕНТ-ТИКОВ</span><strong id="populationSwitchRate">—</strong></div>
 <div><span>РЕЖИМ АДАПТАЦИИ</span><strong id="populationControl">—</strong></div></div>
+<div class="pane-overline">Распределение VS HOLD · Все 1000 агентов</div>
+<div class="economy-stats"><div><span>МЕДИАНА</span><strong id="populationMedian">—</strong></div><div><span>P10</span><strong id="populationP10">—</strong></div><div><span>P90</span><strong id="populationP90">—</strong></div><div><span>ОБОГНАЛИ HOLD, %</span><strong id="populationAheadPercent">—</strong></div></div>
 <div class="pane-overline">ВЫЖИВАЕМОСТЬ ИСХОДНЫХ КОГОРТ</div><div id="populationCohorts" class="trade-feed"></div>
 <div class="pane-overline">СОСТАВ АКТИВНЫХ СТРАТЕГИЙ</div><div id="populationRules" class="agents"></div><div class="divider"></div><div class="pane-overline">ПОСЛЕДНИЕ СОБЫТИЯ ПОПУЛЯЦИИ</div><div class="trade-feed" id="populationEvents"><div class="empty">После старта появятся переходы стратегий, уходы и пополнения</div></div>
-<div class="divider"></div><div class="pane-overline">ПАРНЫЙ ОФЛАЙН-ЭКСПЕРИМЕНТ · v0.6</div>
+<div class="divider"></div><div class="pane-overline">ПАРНЫЙ ОФЛАЙН-ЭКСПЕРИМЕНТ · v0.7</div>
 <p class="footnote">Сравнить одинаковые начальные рынки (замороженная популяция против адаптивной) и сохранить четыре локальных файла:</p>
 <code style="display:block;overflow-x:auto;white-space:pre;padding:10px;background:#0b1723;border-radius:6px">py -3.12 -m market_lab.research --seeds 42,43,44 --ticks 320</code>
 <p class="footnote">Откройте файл report.html из пути, который напечатает команда. Данные включают все 1000 кошельков, а не только выживших. После расхождения решений рынки могут иметь разные цены.</p>
