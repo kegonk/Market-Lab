@@ -22,7 +22,7 @@ def create_handler():
     lock = Lock()
 
     class Handler(BaseHTTPRequestHandler):
-        server_version = 'KairosMarketLab/0.5'
+        server_version = 'KairosMarketLab/0.6'
 
         def _send(self, code: int, body: bytes, content_type: str) -> None:
             self.send_response(code)

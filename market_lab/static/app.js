@@ -30,11 +30,12 @@ function togglePlay() {
  timer=setInterval(() => step(Number($('speed').value)), 190);
 }
 function settings() {
- const fields={seed:'seed',ticks:'ticks',shockTick:'shock_tick',cancelPercent:'cancel_percent',sellQty:'sell_qty',eventsPerTick:'events_per_tick',makerFee:'maker_fee_bps',takerFee:'taker_fee_bps',bankruptcyThreshold:'bankruptcy_threshold_percent',stopDenials:'stop_denials',makerCautionTicks:'maker_caution_ticks',waitingAgents:'waiting_agents',evolutionReviewTicks:'evolution_review_ticks',weakReviewsToExit:'weak_reviews_to_exit',maxJoinsPerReview:'max_joins_per_review'};
+ const fields={seed:'seed',ticks:'ticks',shockTick:'shock_tick',cancelPercent:'cancel_percent',sellQty:'sell_qty',eventsPerTick:'events_per_tick',makerFee:'maker_fee_bps',takerFee:'taker_fee_bps',bankruptcyThreshold:'bankruptcy_threshold_percent',stopDenials:'stop_denials',makerCautionTicks:'maker_caution_ticks',waitingAgents:'waiting_agents',evolutionReviewTicks:'evolution_review_ticks',weakReviewsToExit:'weak_reviews_to_exit',maxJoinsPerReview:'max_joins_per_review',minStrategyHoldTicks:'min_strategy_hold_ticks'};
  const cfg={};
  for(const [id,key] of Object.entries(fields)) {const raw=$(id).value.trim(); if(!/^-?\d+$/.test(raw)) throw new Error(`Введите целое число: ${id}`); cfg[key]=Number(raw);}
  cfg.shock_enabled=$('shockEnabled').checked;
  cfg.evolution_enabled=$('evolutionEnabled').checked;
+ cfg.adaptation_enabled=$('adaptationEnabled').checked;
  return cfg;
 }
 async function reset() {
@@ -106,6 +107,17 @@ function render() {
   $('populationSwitches').textContent=population.strategy_switches;
   $('populationCompared').textContent=population.ahead_of_hold+' / '+population.behind_hold;
   $('populationReviews').textContent=population.review_cycles;
+  $('populationRelative').textContent=number(population.relative_to_hold.total_relative_vcu,1)+' VCU';
+  $('populationAllCompared').textContent=population.relative_to_hold.ahead+' / '+population.relative_to_hold.behind;
+  $('populationBlocked').textContent=population.blocked_switches;
+  $('populationSwitchRate').textContent=number(population.switches_per_1000_agent_ticks,2);
+  $('populationControl').textContent=population.adaptation_enabled?'АДАПТИВНЫЙ':'ЗАМОРОЖЕННЫЙ';
+  $('populationCohorts').replaceChildren();
+  for(const [name,cohort] of Object.entries(population.initial_cohort_survival)){
+    const div=document.createElement('div');div.className='trade-row';
+    div.textContent=`${name} · сохранились ${cohort.surviving}/${cohort.initial} (${number(cohort.survival_percent,1)}%) · смены ${cohort.switches}`;
+    $('populationCohorts').appendChild(div);
+  }
   $('populationRules').replaceChildren();
   const ruleTotal=Math.max(1,population.active);
   for(const [name,count] of Object.entries(population.rule_counts)){
@@ -127,9 +139,10 @@ function render() {
   }
   if(!entries.length){const div=document.createElement('div');div.className='empty';div.textContent='Ожидание первого события популяции';$('populationEvents').appendChild(div);}
  }else{
-  for(const id of ['populationActive','populationWaiting','populationRetired','populationJoined','populationSwitches','populationCompared','populationReviews','populationInvariant'])$(id).textContent='—';
+  for(const id of ['populationActive','populationWaiting','populationRetired','populationJoined','populationSwitches','populationCompared','populationReviews','populationInvariant','populationRelative','populationAllCompared','populationBlocked','populationControl','populationSwitchRate'])$(id).textContent='—';
   $('populationEvents').textContent='Эволюция отключена';
   $('populationRules').replaceChildren();
+  $('populationCohorts').replaceChildren();
  }
  $('empty').classList.toggle('hide',state.tick>0);
  $('step').disabled=state.done; $('play').disabled=state.done;

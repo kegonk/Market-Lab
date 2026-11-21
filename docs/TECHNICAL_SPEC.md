@@ -1,6 +1,6 @@
 # Technical Specification — Kairos Market Lab
 
-Status: v0.1 reference contract plus implemented v0.2–v0.5 extensions. Scope owner: `kegonk/Market-Lab`. Research only.
+Status: v0.1 reference contract plus implemented v0.2–v0.6 extensions. Scope owner: `kegonk/Market-Lab`. Research only.
 
 ## Purpose and non-goals
 
@@ -265,3 +265,22 @@ No natural selection of model parameters by an optimizer, no neural network,
 no reinvestment of commissions, no automatic recapitalization, no liquidation
 on exit, no lifecycle SQLite persistence, no claim of real market stylized-fact
 calibration and no connection to external exchange or Kairos AGI.
+
+## v0.6 — controlled paired population research (implemented)
+
+The research contract and limitations are specified in
+[`RESEARCH_V06.md`](RESEARCH_V06.md). Each seed runs a fully funded
+**frozen population** control and an **adaptive population** treatment,
+with identical initial book, cash/coin endowments and waiting membership.
+An explicit integrity check compares initial states and all state components
+before the first review. With adaptation, order flow can diverge after the
+first review, so arm prices and outcomes need not align.
+
+The after-fee Buy & Hold benchmark uses each of the 1000 agents' initial
+coins and cash, valued at each arm's own final synthetic price. Report
+aggregate and average relative result, cohort survival by *initial* strategy,
+fees, price, volume, retirements, joins, switches, and blocked switches.
+`snapshot()` returns these metrics for the browser, and `research.py` saves
+JSON, two CSV files and an offline HTML report for 1–20 distinct seeds.
+No claiming significance from a three-seed convenience default, no online
+trade routing, no external data sources, no creation of coin/cash in transitions.
