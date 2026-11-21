@@ -48,7 +48,8 @@ class PopulationEvolution:
                  min_strategy_hold_ticks: int = 0,
                  adaptation_enabled: bool = True,
                  allow_switch: bool = True, allow_exit: bool = True,
-                 allow_join: bool = True) -> None:
+                 allow_join: bool = True, allow_retired_reentry: bool = False,
+                 reentry_cooldown_ticks: int = 40) -> None:
         if not 0 <= reserve_agents <= 500:
             raise ValueError('reserve_agents must be 0..500')
         if not 5 <= review_every <= 500:
@@ -63,6 +64,14 @@ class PopulationEvolution:
             raise ValueError('adaptation_enabled must be boolean')
         if any(type(v) is not bool for v in (allow_switch, allow_exit, allow_join)):
             raise ValueError('ablation controls must be booleans')
+        if type(allow_retired_reentry) is not bool or type(reentry_cooldown_ticks) is not int or not 20 <= reentry_cooldown_ticks <= 2000:
+            raise ValueError('invalid reentry controls')
+        self.allow_retired_reentry = allow_retired_reentry
+        self.reentry_cooldown_ticks = reentry_cooldown_ticks
+        self.reentries = 0
+        self.reentry_denials = 0
+        self.reentry_by_agent: dict[str, int] = {}
+        self.exit_by_reason = {'policy': 0, 'risk': 0}
         self.allow_switch = allow_switch
         self.allow_exit = allow_exit
         self.allow_join = allow_join
@@ -145,12 +154,13 @@ class PopulationEvolution:
                                'cash_vcu': wallet.cash_ticks / 10,
                                'coin_qty': wallet.coin_qty}
         self.exits += 1
+        self.exit_by_reason['policy' if reason.startswith('Sustained') else 'risk'] += 1
         self._log(tick, 'EXIT', agent, reason)
 
     def _admit_replacements(self, tick: int) -> None:
         # Each newcomer is ALREADY funded at initialization. No stipend, mint,
         # wealth transfer, wallet creation or forced reactivation is performed.
-        needed = min(self.max_joins_per_review, max(0, self.exits - self.joins))
+        needed = min(self.max_joins_per_review, max(0, len(self.initial_active_ids) - len(self.active)))
         admitted = 0
         while self.waiting and admitted < needed:
             agent = self.waiting.popleft()
@@ -162,6 +172,42 @@ class PopulationEvolution:
             self.joins += 1
             admitted += 1
             self._log(tick, 'JOIN', agent, 'Pre-funded reserve participant admitted')
+
+    def _readmit_retired(self, tick: int, price_ticks: int) -> None:
+        """Optional re-entry of POLICY-retired, still-funded existing wallets.
+
+        Risk-stopped or bankrupt wallets are never reinstated. No wallet,
+        coins, cash, orders or fee credits are created or cleared. A recovered
+        member starts a new tenure with the wallet's existing holdings.
+        """
+        if not self.allow_retired_reentry:
+            return
+        vacancies = min(self.max_joins_per_review, max(0, len(self.initial_active_ids) - len(self.active)))
+        for agent, record in sorted(tuple(self.retired.items()),
+                                    key=lambda item: (item[1]['tick'], item[0])):
+            if vacancies <= 0:
+                break
+            if not record['reason'].startswith('Sustained'):
+                continue
+            if tick - record['tick'] < self.reentry_cooldown_ticks:
+                continue
+            wallet = self.economy.wallets[agent]
+            equity = wallet.cash_ticks + wallet.coin_qty * price_ticks
+            if (wallet.status != 'STOPPED' or wallet.denial_streak >= self.economy.stop_denials
+                    or (wallet.free_cash <= 0 and wallet.free_coin <= 0)
+                    or 100 * equity <= self.economy.bankruptcy_threshold_percent * wallet.initial_equity_ticks
+                    or wallet.reserved_cash_ticks or wallet.reserved_coin_qty):
+                self.reentry_denials += 1
+                continue
+            wallet.status = 'ACTIVE'
+            # Only this specific policy retirement is reactivated; no risk stop
+            # can arrive here, and no balance/denial counter is reset.
+            self.active[agent] = self._member(agent, tick)
+            del self.retired[agent]
+            self.reentries += 1
+            self.reentry_by_agent[agent] = self.reentry_by_agent.get(agent, 0) + 1
+            vacancies -= 1
+            self._log(tick, 'REENTRY', agent, 'Policy-retired funded existing wallet')
 
     def review(self, tick: int, price_ticks: int, book: OrderBook) -> None:
         # Risk stops and bankruptcies always override population decisions.
@@ -224,6 +270,7 @@ class PopulationEvolution:
                 member.weak_reviews = 0
         if self.allow_join:
             self._admit_replacements(tick)
+        self._readmit_retired(tick, price_ticks)
 
     def check(self) -> bool:
         active, waiting, retired = set(self.active), set(self.waiting), set(self.retired)
@@ -237,7 +284,10 @@ class PopulationEvolution:
         # entry is skipped; every original identity remains accounted for.
         if set().union(*groups) != self._all_ids:
             return False
-        if self.joins > self.exits or self.exits != len(self.retired):
+        if (self.joins > self.exits or self.exits != len(self.retired) + self.reentries
+                or sum(self.exit_by_reason.values()) != self.exits
+                or sum(self.reentry_by_agent.values()) != self.reentries
+                or (not self.allow_retired_reentry and self.reentries)):
             return False
         return all(self.economy.can_trade(a) for a in self.active)
 
@@ -305,6 +355,8 @@ class PopulationEvolution:
         return {'enabled': True, 'active': len(self.active),
                 'allow_switch': self.allow_switch, 'allow_exit': self.allow_exit,
                 'allow_join': self.allow_join,
+                'allow_retired_reentry': self.allow_retired_reentry,
+                'reentry_cooldown_ticks': self.reentry_cooldown_ticks,
                 'adaptation_enabled': self.adaptation_enabled,
                 'min_strategy_hold_ticks': self.min_strategy_hold_ticks,
                 'blocked_switches': self.blocked_switches,
@@ -315,7 +367,9 @@ class PopulationEvolution:
                 'initial_cohort_survival': cohort_survival,
                 'relative_to_hold': self.relative_metrics(price_ticks),
                 'waiting': len(self.waiting), 'ineligible_reserves': len(self.ineligible_reserves),
-                'retired': self.exits,
+                'retired': self.exits, 'currently_retired': len(self.retired),
+                'reentries': self.reentries, 'reentry_denials': self.reentry_denials,
+                'exit_by_reason': dict(self.exit_by_reason),
                 'admitted': self.joins, 'strategy_switches': self.switches,
                 'review_cycles': self.review_count,
                 'positive_reviews': self.positive_reviews,
