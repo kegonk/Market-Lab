@@ -139,9 +139,9 @@ class TestV08Integrated(unittest.TestCase):
             self.assertEqual(len(resumed['pairs']),2)
             self.assertEqual(len(resumed['shadow']),8)
             self.assertEqual(sum(x['count'] for x in resumed['cohorts'] if x['seed']==101 and x['arm']=='adaptive'),1000)
-            self.assertIn('simulated only', (out/'report.html').read_text().lower())
-            self.assertNotIn('http://', (out/'report.html').read_text())
-            self.assertNotIn('https://', (out/'report.html').read_text())
+            self.assertIn('simulated only', (out/'report.html').read_text(encoding='utf-8').lower())
+            self.assertNotIn('http://', (out/'report.html').read_text(encoding='utf-8'))
+            self.assertNotIn('https://', (out/'report.html').read_text(encoding='utf-8'))
             (out/'paired.csv').write_text('corrupt',encoding='utf-8')
             with self.assertRaisesRegex(ValueError, 'FINAL_HASH_MISMATCH'):
                 execute(self.plan,out,resume=True)
