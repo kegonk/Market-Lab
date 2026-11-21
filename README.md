@@ -1,3 +1,9 @@
+## v1.1 — Adaptive Liquidity Control (offline synthetic only)
+
+New opt-in controller `liquidity_v11_mode=OFF | SYMMETRIC | SIDE_AWARE` separates BID and ASK targeting, caps **funded** quote size and wallet reservation exposure, records actual matched fills/cancellations and censored open-order lifetimes. It does not mint cash/coins or connect to real markets. Existing behaviour is unchanged when disabled. Preregistered seed 401–410 holdout, 320/1280 tick horizons, resumption and SHA-256 checkpoints; concise `summary.json` + `windows.csv` avoid huge per-tick JSON.
+
+See [v1.1 Research Protocol](docs/RESEARCH_V11.md) for design, limitations and PowerShell commands. The **full** profile is 680 simulated arms (17 cells × 10 seed × 2 horizons × 2 adaptation arms); use independent seeds and preserve the original fixed plan and outputs.
+
 # Kairos Market Lab
 
 **Standalone, public, fully synthetic market simulator — v0.8 holdout/continuation research + v0.7 ablation research + v0.6 paired research + v0.5 population evolution + v0.4 fees/FIFO/lifecycle + v0.3 wallets + v0.2 interactive UI + v0.1 LQ-001.** No connection to Kairos AGI runtime, exchanges, real money, real market data, external AI APIs or credentials.
