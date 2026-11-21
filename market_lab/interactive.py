@@ -41,13 +41,16 @@ class SessionConfig:
     allow_strategy_switch: bool = True
     allow_population_exit: bool = True
     allow_population_join: bool = True
+    allow_retired_reentry: bool = False
+    reentry_cooldown_ticks: int = 40
+    synthetic_regime: str = 'LEGACY'
 
     def __post_init__(self) -> None:
         for field in ('seed', 'ticks', 'shock_tick', 'cancel_percent', 'sell_qty',
                       'events_per_tick', 'candle_ticks', 'maker_fee_bps', 'taker_fee_bps',
                       'bankruptcy_threshold_percent', 'stop_denials', 'maker_caution_ticks',
                       'waiting_agents', 'evolution_review_ticks', 'weak_reviews_to_exit',
-                      'max_joins_per_review', 'min_strategy_hold_ticks'):
+                      'max_joins_per_review', 'min_strategy_hold_ticks', 'reentry_cooldown_ticks'):
             if type(getattr(self, field)) is not int:
                 raise ValueError(f'{field} must be an integer')
         if not (20 <= self.ticks <= 2000 and 1 <= self.shock_tick <= self.ticks):
@@ -68,10 +71,15 @@ class SessionConfig:
                 and 2 <= self.weak_reviews_to_exit <= 20
                 and 1 <= self.max_joins_per_review <= 100):
             raise ValueError('invalid evolution parameters')
+        if not 20 <= self.reentry_cooldown_ticks <= 2000:
+            raise ValueError('invalid reentry_cooldown_ticks')
+        if self.synthetic_regime not in ('LEGACY', 'BULL', 'BEAR', 'SIDEWAYS', 'THIN') or type(self.synthetic_regime) is not str:
+            raise ValueError('invalid synthetic_regime')
         if not 0 <= self.min_strategy_hold_ticks <= 2000:
             raise ValueError('min_strategy_hold_ticks must be 0..2000')
         if any(type(v) is not bool for v in (self.allow_strategy_switch,
-                self.allow_population_exit, self.allow_population_join)):
+                self.allow_population_exit, self.allow_population_join,
+                self.allow_retired_reentry)):
             raise ValueError('ablation flags must be booleans')
         if type(self.adaptation_enabled) is not bool:
             raise ValueError('adaptation_enabled must be boolean')
@@ -106,7 +114,9 @@ class SyntheticMarket:
             adaptation_enabled=self.config.adaptation_enabled,
             allow_switch=self.config.allow_strategy_switch,
             allow_exit=self.config.allow_population_exit,
-            allow_join=self.config.allow_population_join)
+            allow_join=self.config.allow_population_join,
+            allow_retired_reentry=self.config.allow_retired_reentry,
+            reentry_cooldown_ticks=self.config.reentry_cooldown_ticks)
             if self.config.evolution_enabled else None)
         self.maker_withheld = 0
         self.maker_widened = 0
@@ -117,6 +127,7 @@ class SyntheticMarket:
         self.recent_trades: list[dict] = []
         self.trades = 0
         self.total_traded_qty = 0
+        self.regime_cancelled_qty = 0
         self.agent_actions = {"NOISE": 0, "MAKER": 0, "TREND": 0, "REVERSION": 0}
         self.shock: dict | None = None
         self._candle: dict | None = None
@@ -204,12 +215,16 @@ class SyntheticMarket:
         qty = self.rng.randint(1, 5)
 
         if kind == "MAKER":
+            if self.config.synthetic_regime == 'THIN' and self.rng.random() < 0.75:
+                self.maker_withheld += 1
+                return
             # Risk-averse quoting is a model assumption, not a forecast.
             caution = self.maker_cautious()
             if caution and self.rng.random() < 0.60:
                 self.maker_withheld += 1
                 return
             side: Side = "BUY" if self.rng.getrandbits(1) else "SELL"
+            side = self._regime_side(side)
             if caution:
                 self.maker_widened += 1
                 self._limit(side, min(qty, 2), agent, seq, wide=True)
@@ -217,22 +232,38 @@ class SyntheticMarket:
                 self._limit(side, qty + 2, agent, seq)
         elif kind == "NOISE":
             side = "BUY" if self.rng.getrandbits(1) else "SELL"
+            side = self._regime_side(side)
             if self.rng.random() < 0.72:
                 self._market(side, qty, agent, kind)
             else:
                 self._limit(side, qty, agent, seq)
         elif kind == "TREND":
             side = "BUY" if trend > 0 else "SELL" if trend < 0 else ("BUY" if self.rng.getrandbits(1) else "SELL")
+            side = self._regime_side(side)
             if self.rng.random() < 0.75:
                 self._market(side, qty, agent, kind)
             else:
                 self._limit(side, qty, agent, seq)
         else:
             side = "SELL" if trend > 0 else "BUY" if trend < 0 else ("BUY" if self.rng.getrandbits(1) else "SELL")
+            side = self._regime_side(side)
             if self.rng.random() < 0.70:
                 self._market(side, qty, agent, kind)
             else:
                 self._limit(side, qty, agent, seq)
+
+    def _regime_side(self, side: Side) -> Side:
+        """Synthetic demand imbalance, never used by legacy sessions."""
+        regime = self.config.synthetic_regime
+        if regime == 'LEGACY' or regime == 'THIN':
+            return side
+        if regime == 'BULL' and self.rng.random() < 0.75:
+            return 'BUY'
+        if regime == 'BEAR' and self.rng.random() < 0.75:
+            return 'SELL'
+        if regime == 'SIDEWAYS' and self.rng.random() < 0.75:
+            return 'BUY' if self.book.last_trade_ticks < self.book.config.mid_ticks else 'SELL'
+        return side
 
     def maker_cautious(self) -> bool:
         within_shock = (self.shock is not None and self.shock['enabled'] and
@@ -279,6 +310,11 @@ class SyntheticMarket:
             for index in range(self.config.events_per_tick):
                 self._act(index)
 
+        if self.config.synthetic_regime == 'THIN' and self.tick % 80 == 0:
+            # Remove synthetic resting depth; the economic module releases
+            # corresponding owner reservations. No asset is destroyed.
+            self.regime_cancelled_qty += self.economy.cancel_book_top(self.book, 'BUY', 8, 0.55)
+            self.regime_cancelled_qty += self.economy.cancel_book_top(self.book, 'SELL', 8, 0.55)
         self._ensure_candle()
         self.price_history.append(self.book.last_trade_ticks)
         if self.tick % self.config.candle_ticks == 0 or self.tick == self.config.ticks:
@@ -322,6 +358,7 @@ class SyntheticMarket:
                 "economy": self.economy.snapshot(self.book.last_trade_ticks),
                 "population": (self.population.snapshot(self.book.last_trade_ticks) if self.population
                                else {"enabled": False, "source": "SIMULATED"}),
+                "regime_cancelled_qty": self.regime_cancelled_qty,
                 "maker_risk": {"cautious": self.maker_cautious(),
                                "withheld_quotes": self.maker_withheld,
                                "widened_quotes": self.maker_widened},
